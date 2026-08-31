@@ -1,0 +1,53 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
+*.pyc
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# Environment Variables & Secrets
+.env
+!.env.example
+
+# Node / Frontend / Electron dependencies & builds
+node_modules/
+frontend/node_modules/
+electron/node_modules/
+dist/
+.dist/
+frontend/dist/
+electron/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Databases & Cache
+*.db
+*.sqlite
+*.sqlite3
+aegis.db
+aura.db
+data/tts_cache/
+*.mp3
+
+# Test & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS / IDE files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Nested archives / duplicate unzips
+SU/
+SU.zip
