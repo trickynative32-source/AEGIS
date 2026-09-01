@@ -238,19 +238,47 @@ class VisualMemoryEngine:
                 "message": covered_msg
             }
 
-        # 2. Try Google Gemini 2.0 Flash Vision (Direct API Key)
+        # 2. Try NVIDIA LocateAnything-3B Open-Vocabulary Grounding
+        if getattr(settings, "NVIDIA_LOCATE_ANYTHING_ENABLED", True):
+            try:
+                from backend.services.locate_anything import locate_anything_detector
+                la_items = await locate_anything_detector.detect_objects(img)
+                if la_items and len(la_items) > 0:
+                    stored_items = []
+                    for item in la_items:
+                        name = item["name"]
+                        self.store_observation(
+                            object_name=name,
+                            location_context="in room",
+                            room="workspace",
+                            spatial_relationship=f"located in view with confidence {int(item.get('confidence', 0.9)*100)}%",
+                            confidence=item.get("confidence", 0.94)
+                        )
+                        if name not in stored_items:
+                            stored_items.append(name)
+                    return {
+                        "status": "nvidia_locateanything_3b",
+                        "scene": "workspace",
+                        "people_count": sum(1 for item in la_items if item["name"] == "person"),
+                        "objects": stored_items,
+                        "message": f"NVIDIA LocateAnything-3B detected: {', '.join(stored_items)}."
+                    }
+            except Exception as e:
+                logger.debug(f"NVIDIA LocateAnything extraction note: {e}")
+
+        # 3. Try Google Gemini 2.0 Flash Vision (Direct API Key)
         if settings.GEMINI_API_KEY:
             gemini_res = await self._analyze_with_gemini_direct(frame_base64)
             if gemini_res and len(gemini_res.get("objects", [])) > 0:
                 return gemini_res
 
-        # 3. Try OpenRouter Vision (Gemini 2.0 Flash or Vision Model)
+        # 4. Try OpenRouter Vision (Gemini 2.0 Flash or Vision Model)
         if settings.OPENROUTER_API_KEY:
             openrouter_res = await self._analyze_with_openrouter(frame_base64)
             if openrouter_res and len(openrouter_res.get("objects", [])) > 0:
                 return openrouter_res
 
-        # 4. Deep Local Computer Vision Spatial Segmentation (Offline fallback)
+        # 5. Deep Local Computer Vision Spatial Segmentation (Offline fallback)
         return self._analyze_with_local_cv(img)
 
     async def _analyze_with_gemini_direct(self, frame_base64: str) -> Optional[Dict[str, Any]]:

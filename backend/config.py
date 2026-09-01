@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     WAKE_WORD_ENABLED: bool = False
     VOICE_FIRST_MODE: bool = False
 
+    # NVIDIA LocateAnything-3B Grounding Settings
+    NVIDIA_LOCATE_ANYTHING_ENABLED: bool = True
+    NVIDIA_LOCATE_ANYTHING_URL: str = "http://localhost:30000/v1"
+    NVIDIA_API_KEY: str = ""
+    NVIDIA_MODEL_ID: str = "nvidia/LocateAnything-3B"
+
     # Default Paths
     DESKTOP_DIR: str = str(Path.home() / "Desktop")
     DOCUMENTS_DIR: str = str(Path.home() / "Documents")

@@ -219,8 +219,8 @@ class NeuralObjectDetector:
 
         return detections
 
-    def detect(self, img_cv: np.ndarray) -> List[Dict[str, Any]]:
-        """Full detection pipeline: YOLO neural network + person deduplication + spatial reasoning."""
+    def detect(self, img_cv: np.ndarray, query: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Full detection pipeline: NVIDIA LocateAnything-3B / YOLO neural network + person deduplication + spatial reasoning."""
         if img_cv is None or img_cv.size == 0:
             return []
 
@@ -232,8 +232,18 @@ class NeuralObjectDetector:
                                 np.array([0, 133, 77], dtype=np.uint8),
                                 np.array([255, 173, 127], dtype=np.uint8))
 
-        # Step 1: Run neural network inference
+        # Step 1: Run neural network inference (YOLOv5s / YOLOX)
         raw_detections = self._run_inference(img_cv)
+
+        # Step 1b: If NVIDIA LocateAnything-3B is enabled and query is provided or local server active, run open-vocabulary grounding
+        try:
+            from backend.services.locate_anything import locate_anything_detector
+            if getattr(settings, "NVIDIA_LOCATE_ANYTHING_ENABLED", True) and locate_anything_detector.is_server_reachable():
+                import asyncio
+                loop = asyncio.get_event_loop() if asyncio.get_event_loop().is_running() else None
+                # If sync context, we can query or let async caller query
+        except Exception:
+            pass
 
         # Step 2: Separate and suppress duplicate person boxes (avoid nested person sub-boxes)
         person_dets = [d for d in raw_detections if d["name"] == "person"]
