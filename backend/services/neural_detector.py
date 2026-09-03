@@ -62,11 +62,21 @@ class NeuralObjectDetector:
         try:
             import onnxruntime as ort
             cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models_cache")
-            yolov5_path = os.path.join(cache_dir, "yolov5s.onnx")
+            yolov5m_path = os.path.join(cache_dir, "yolov5m.onnx")
+            yolov5s_path = os.path.join(cache_dir, "yolov5s.onnx")
             yolox_path = os.path.join(cache_dir, "coco-yolox_tiny.onnx")
 
-            if os.path.exists(yolov5_path):
-                self.session = ort.InferenceSession(yolov5_path, providers=["CPUExecutionProvider"])
+            if os.path.exists(yolov5m_path):
+                self.session = ort.InferenceSession(yolov5m_path, providers=["CPUExecutionProvider"])
+                inp = self.session.get_inputs()[0]
+                self._input_name = inp.name
+                self._input_h = inp.shape[2] if len(inp.shape) > 2 else 640
+                self._input_w = inp.shape[3] if len(inp.shape) > 3 else 640
+                self.model_type = "yolov5"
+                self.model_loaded = True
+                logger.info(f"High-Precision YOLOv5m Neural Detector loaded: input {self._input_name} shape ({self._input_w}x{self._input_h})")
+            elif os.path.exists(yolov5s_path):
+                self.session = ort.InferenceSession(yolov5s_path, providers=["CPUExecutionProvider"])
                 inp = self.session.get_inputs()[0]
                 self._input_name = inp.name
                 self._input_h = inp.shape[2] if len(inp.shape) > 2 else 640
@@ -101,8 +111,24 @@ class NeuralObjectDetector:
         except Exception as e:
             logger.warning(f"Could not initialize Neural Detector: {e}")
 
+    def _letterbox(self, img: np.ndarray, new_shape: tuple = (640, 640), color: tuple = (114, 114, 114)):
+        """Standard YOLO letterbox with aspect ratio preservation and symmetric border padding."""
+        shape = img.shape[:2]
+        r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+        new_unpad = (int(round(shape[1] * r)), int(round(shape[0] * r)))
+        dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]
+        dw /= 2.0
+        dh /= 2.0
+
+        if shape[::-1] != new_unpad:
+            img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+        top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
+        left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+        img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+        return img, r, (dw, dh)
+
     def _run_inference(self, img_cv: np.ndarray) -> List[Dict[str, Any]]:
-        """Run deep neural network inference."""
+        """Run deep neural network inference with letterbox aspect-preserving scaling."""
         if not self.model_loaded or self.session is None:
             return []
 
@@ -111,45 +137,48 @@ class NeuralObjectDetector:
 
         try:
             if self.model_type == "yolov5":
-                # Preprocess for YOLOv5: RGB, normalized 0..1, FP16
+                # Preprocess for YOLOv5: RGB, letterbox, normalized 0..1, FP16
                 img_rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
-                img_resized = cv2.resize(img_rgb, (self._input_w, self._input_h))
-                blob = (img_resized.astype(np.float32) / 255.0).transpose(2, 0, 1)[np.newaxis, ...].astype(np.float16)
+                img_lb, r, (dw, dh) = self._letterbox(img_rgb, (self._input_w, self._input_h))
+                blob = (img_lb.astype(np.float32) / 255.0).transpose(2, 0, 1)[np.newaxis, ...].astype(np.float16)
 
                 outputs = self.session.run(None, {self._input_name: blob})[0][0].astype(np.float32)
-                scale_x = w_orig / float(self._input_w)
-                scale_y = h_orig / float(self._input_h)
 
                 boxes, scores, class_ids = [], [], []
                 for i in range(len(outputs)):
                     row = outputs[i]
                     obj_conf = float(row[4])
-                    if obj_conf < 0.22:
+                    if obj_conf < 0.20:
                         continue
                     cls_scores = row[5:] * obj_conf
                     cid = int(np.argmax(cls_scores))
                     score = float(cls_scores[cid])
                     raw_name = COCO_CLASSES[cid]
 
-                    min_conf = 0.25 if raw_name in INDOOR_RELEVANT else 0.50
+                    min_conf = 0.22 if raw_name in INDOOR_RELEVANT else 0.65
                     if score < min_conf:
                         continue
 
                     cx, cy, bw, bh = row[0], row[1], row[2], row[3]
-                    x1 = int((cx - bw / 2.0) * scale_x)
-                    y1 = int((cy - bh / 2.0) * scale_y)
-                    wb = int(bw * scale_x)
-                    hb = int(bh * scale_y)
+                    x1 = (cx - bw / 2.0 - dw) / r
+                    y1 = (cy - bh / 2.0 - dh) / r
+                    wb = bw / r
+                    hb = bh / r
 
-                    if wb < 15 or hb < 15:
+                    px1 = max(0, min(w_orig - 1, int(round(x1))))
+                    py1 = max(0, min(h_orig - 1, int(round(y1))))
+                    pwb = max(1, min(w_orig - px1, int(round(wb))))
+                    phb = max(1, min(h_orig - py1, int(round(hb))))
+
+                    if pwb < 15 or phb < 15:
                         continue
 
-                    boxes.append([max(0, x1), max(0, y1), min(w_orig, wb), min(h_orig, hb)])
+                    boxes.append([px1, py1, pwb, phb])
                     scores.append(score)
                     class_ids.append(cid)
 
                 if boxes:
-                    indices = cv2.dnn.NMSBoxes(boxes, scores, 0.25, 0.45)
+                    indices = cv2.dnn.NMSBoxes(boxes, scores, 0.22, 0.45)
                     if len(indices) > 0:
                         for idx in indices.flatten():
                             raw_label = COCO_CLASSES[class_ids[idx]]

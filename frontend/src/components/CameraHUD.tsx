@@ -46,6 +46,7 @@ export const CameraHUD: React.FC<CameraHUDProps> = ({
   // Live real-time detections and bounding boxes
   const [liveBoxes, setLiveBoxes] = useState<LiveDetectionBox[]>([]);
   const [showLiveDetection, setShowLiveDetection] = useState<boolean>(true);
+  const [frameAspectRatio, setFrameAspectRatio] = useState<number>(4 / 3);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -147,6 +148,9 @@ export const CameraHUD: React.FC<CameraHUDProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = finalStream;
         videoRef.current.onloadedmetadata = () => {
+          if (videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+            setFrameAspectRatio(videoRef.current.videoWidth / videoRef.current.videoHeight);
+          }
           videoRef.current?.play().catch((e) => console.warn('Play error:', e));
         };
       }
@@ -180,10 +184,13 @@ export const CameraHUD: React.FC<CameraHUDProps> = ({
     };
   }, [isActive, startWebcam]);
 
-  // Subscribe to live WebSocket detections
+  // Subscribe to live WebSocket detections with dynamic aspect ratio sync
   useEffect(() => {
     const unsub = wsService.subscribe((data) => {
       if (data.type === 'live_detections') {
+        if (data.frame_w && data.frame_h && data.frame_h > 0) {
+          setFrameAspectRatio(data.frame_w / data.frame_h);
+        }
         setLiveBoxes(data.boxes || []);
       }
     });
@@ -276,6 +283,9 @@ export const CameraHUD: React.FC<CameraHUDProps> = ({
     if (node && streamRef.current) {
       node.srcObject = streamRef.current;
       node.onloadedmetadata = () => {
+        if (node.videoWidth > 0 && node.videoHeight > 0) {
+          setFrameAspectRatio(node.videoWidth / node.videoHeight);
+        }
         node.play().catch((e) => console.warn('Play error:', e));
       };
     }
@@ -437,14 +447,17 @@ export const CameraHUD: React.FC<CameraHUDProps> = ({
           </div>
 
           {/* Live Video Preview Box with Live Bounding Boxes */}
-          <div className="relative rounded-xl overflow-hidden bg-black aspect-video border border-slate-800 shadow-md flex items-center justify-center">
+          <div
+            style={{ aspectRatio: `${frameAspectRatio}` }}
+            className="relative rounded-xl overflow-hidden bg-black border border-slate-800 shadow-md flex items-center justify-center w-full max-h-[300px]"
+          >
             {/* Native HTML5 Video Stream */}
             <video
               ref={setVideoRef}
               autoPlay
               playsInline
               muted
-              className={`w-full h-full object-cover ${permissionState === 'granted' ? 'block' : 'hidden'}`}
+              className={`w-full h-full object-fill ${permissionState === 'granted' ? 'block' : 'hidden'}`}
             />
 
             {/* Live Real-Time Bounding Box Overlays */}
@@ -454,11 +467,11 @@ export const CameraHUD: React.FC<CameraHUDProps> = ({
                   const style = getObjectStyle(box.name);
                   const pct = Math.round(box.confidence * 100);
 
-                  // Calculate relative percentages
-                  const left = Math.max(1, Math.min(box.rel_x * 100, 92));
-                  const top = Math.max(1, Math.min(box.rel_y * 100, 90));
-                  const width = Math.min(Math.max(box.rel_w * 100, 10), 99 - left);
-                  const height = Math.min(Math.max(box.rel_h * 100, 10), 99 - top);
+                  // Calculate relative percentages matching frame exactly
+                  const left = Math.max(0, Math.min(box.rel_x * 100, 96));
+                  const top = Math.max(0, Math.min(box.rel_y * 100, 96));
+                  const width = Math.min(box.rel_w * 100, 100 - left);
+                  const height = Math.min(box.rel_h * 100, 100 - top);
 
                   // If box is near top of container, render tag inside box to prevent clipping
                   const tagPositionClass = top < 10 ? 'top-1 left-1' : '-top-6 left-0';
