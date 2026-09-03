@@ -136,6 +136,9 @@ async def process_user_query(user_text: str, is_voice: bool = False) -> Dict[str
     # 1. Fast deterministic local router check (<5ms)
     fast_result = await router.route_and_execute(clean_text)
     
+    url = None
+    booking_data = None
+
     if fast_result:
         if "pending_reminder_task" in fast_result:
             agent.last_pending_task = fast_result["pending_reminder_task"]
@@ -144,6 +147,8 @@ async def process_user_query(user_text: str, is_voice: bool = False) -> Dict[str
         tool_name = fast_result.get("tool", "local_fast_route")
         verified = fast_result.get("verified", True)
         action = fast_result.get("action")
+        url = fast_result.get("url")
+        booking_data = fast_result.get("booking_data")
     else:
         # 2. General Agent & Reasoning loop
         await manager.broadcast_json({"type": "state_change", "state": "EXECUTING", "query": clean_text})
@@ -152,6 +157,8 @@ async def process_user_query(user_text: str, is_voice: bool = False) -> Dict[str
         tool_name = agent_result.get("tool")
         verified = agent_result.get("verified", True)
         action = agent_result.get("action")
+        url = agent_result.get("url")
+        booking_data = agent_result.get("booking_data")
 
     # Broadcast state: SPEAKING
     await manager.broadcast_json({"type": "state_change", "state": "SPEAKING", "response": response_text})
@@ -172,6 +179,8 @@ async def process_user_query(user_text: str, is_voice: bool = False) -> Dict[str
         "tool": tool_name,
         "verified": verified,
         "action": action,
+        "url": url,
+        "booking_data": booking_data,
         "audio_base64": audio_base64,
         "timestamp": asyncio.get_event_loop().time()
     }

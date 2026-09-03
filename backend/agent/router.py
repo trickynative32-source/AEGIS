@@ -9,15 +9,150 @@ from backend.services.shutdown import is_goodbye_request, perform_graceful_shutd
 from backend.services.routine_learner import routine_learner
 from backend.agent.web_search import search_web_summary
 from backend.tools.math_tools import evaluate_math_expression
+from backend.tools.flight_tools import resolve_user_location
 
 logger = logging.getLogger("AEGIS.Router")
 
+def extract_flight_details(text: str, default_origin: str, is_reply: bool = False) -> Dict[str, Any]:
+    t = text.lower()
+    site = None
+    if "makemytrip" in t or "mmt" in t:
+        site = "MakeMyTrip"
+    elif "skyscanner" in t:
+        site = "Skyscanner"
+    elif "expedia" in t:
+        site = "Expedia"
+    elif "cleartrip" in t:
+        site = "Cleartrip"
+    elif "kayak" in t:
+        site = "Kayak"
+    elif "google flights" in t or "google flight" in t:
+        site = "Google Flights"
+
+    origin = default_origin
+    from_match = re.search(r"\bfrom\s+([a-zA-Z\s]+?)(?:\s+to\b|\s+on\b|\s+tomorrow|\s+via\b|$)", t)
+    if from_match:
+        cand_origin = from_match.group(1).strip()
+        if cand_origin in ["my given location", "my location", "here", "given location", "current location"]:
+            origin = default_origin
+        elif cand_origin and not any(w in cand_origin for w in ["flight", "ticket", "book"]):
+            origin = cand_origin.title()
+
+    dest = None
+    to_match = re.search(r"\bto\s+([a-zA-Z\s]+?)(?:\s+on\b|\s+tomorrow|\s+today|\s+next\b|\s+via\b|\s+from\b|\s+on\s+google|\s+on\s+makemytrip|\s+on\s+skyscanner|$)", t)
+    if to_match:
+        cand_dest = to_match.group(1).strip()
+        cand_dest = re.sub(r"\b(book|flight|tickets?|a|the|my|given|location)\b", "", cand_dest).strip()
+        if cand_dest and len(cand_dest) > 1:
+            dest = cand_dest.title()
+    elif is_reply:
+        clean = re.sub(r"\b(tomorrow|today|tonight|next\s+[a-zA-Z]+|on|in|via|makemytrip|google flights|skyscanner|expedia|cleartrip|kayak)\b.*", "", t).strip()
+        clean = re.sub(r"^(to\s+|fly\s+to\s+)", "", clean).strip()
+        if clean and len(clean) > 1 and not any(w in clean for w in ["flight", "ticket", "book", "location"]):
+            dest = clean.title()
+
+    date_str = None
+    date_match = re.search(r"\b(tomorrow|day after tomorrow|today|tonight|next week|next [a-zA-Z]+|\d{1,2}(?:st|nd|rd|th)?\s+[a-zA-Z]+(?:\s+\d{4})?|[a-zA-Z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+\d{4})?|\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}|on [a-zA-Z]+)\b", t)
+    if date_match:
+        date_str = date_match.group(1).strip()
+        if date_str.startswith("on "):
+            date_str = date_str[3:].strip()
+
+    return {"origin": origin, "destination": dest, "date": date_str, "site": site}
+
 class FastDeterministicRouter:
-    """Zero-latency local routing for deterministic tasks, system clock, camera, apps, maps, youtube, reminders."""
+    """Zero-latency local routing for deterministic tasks, system clock, camera, apps, maps, youtube, reminders, flights."""
+
+    def __init__(self):
+        self.pending_flight: Optional[Dict[str, Any]] = None
 
     async def route_and_execute(self, user_input: str) -> Optional[Dict[str, Any]]:
         raw_text = user_input.strip()
         t = raw_text.lower().rstrip(".!?,")
+
+        # 0. Flight Booking Multi-Turn Continuation
+        if self.pending_flight:
+            # Step A: User was asked "Where would you like to fly to from {origin}, and on what date?"
+            if self.pending_flight.get("step") == "awaiting_destination_date":
+                origin = self.pending_flight.get("origin") or resolve_user_location()
+                details = extract_flight_details(raw_text, default_origin=origin, is_reply=True)
+                dest = details["destination"]
+                date = details["date"] or "tomorrow"
+                site = details["site"]
+
+                if dest:
+                    if site:
+                        self.pending_flight = None
+                        tool_res = await registry.execute(
+                            "book_flight_tickets",
+                            {"destination": dest, "origin": origin, "date": date, "preferred_site": site}
+                        )
+                        res_data = tool_res.get("result", {})
+                        return {
+                            "handled": True,
+                            "response": res_data.get("message", f"Redirecting to {site} for flights from {origin} to {dest}."),
+                            "action": "open_url",
+                            "url": res_data.get("url"),
+                            "booking_data": res_data.get("booking_data"),
+                            "tool": "book_flight_tickets",
+                            "verified": True
+                        }
+                    else:
+                        self.pending_flight = {
+                            "step": "awaiting_site",
+                            "origin": origin,
+                            "destination": dest,
+                            "date": date
+                        }
+                        return {
+                            "handled": True,
+                            "response": f"From which booking site would you like to book your flight from {origin} to {dest}? (Google Flights, MakeMyTrip, Skyscanner, or Expedia)",
+                            "tool": "book_flight_tickets",
+                            "pending_flight": self.pending_flight,
+                            "booking_data": {
+                                "origin": origin,
+                                "destination": dest,
+                                "date": date,
+                                "awaiting_site": True
+                            },
+                            "verified": True
+                        }
+
+            # Step B: User was asked "From which booking site would you like to book?"
+            elif self.pending_flight.get("step") == "awaiting_site":
+                origin = self.pending_flight.get("origin") or resolve_user_location()
+                dest = self.pending_flight.get("destination") or "Delhi"
+                date = self.pending_flight.get("date") or "tomorrow"
+
+                site = "Google Flights"
+                if "make" in t or "mmt" in t:
+                    site = "MakeMyTrip"
+                elif "sky" in t:
+                    site = "Skyscanner"
+                elif "expedia" in t:
+                    site = "Expedia"
+                elif "clear" in t:
+                    site = "Cleartrip"
+                elif "kayak" in t:
+                    site = "Kayak"
+                elif "google" in t or "any" in t or "first" in t or "preferred" in t:
+                    site = "Google Flights"
+
+                self.pending_flight = None
+                tool_res = await registry.execute(
+                    "book_flight_tickets",
+                    {"destination": dest, "origin": origin, "date": date, "preferred_site": site}
+                )
+                res_data = tool_res.get("result", {})
+                return {
+                    "handled": True,
+                    "response": res_data.get("message", f"Redirecting to {site} for flights from {origin} to {dest}."),
+                    "action": "open_url",
+                    "url": res_data.get("url"),
+                    "booking_data": res_data.get("booking_data"),
+                    "tool": "book_flight_tickets",
+                    "verified": True
+                }
 
         # 1. Goodbye / Self Shutdown
         if is_goodbye_request(t):
@@ -202,10 +337,73 @@ class FastDeterministicRouter:
             else:
                 tool_res = await registry.execute("open_maps", {"query": query})
                 msg = f"Showing {query} on Google Maps."
-            routine_learner.log_action("website_open", "Google Maps")
-            return {"handled": True, "response": msg, "tool": "open_maps", "verified": True}
+        # 11. Context-Aware Flight Booking & Portal Redirection
+        if (
+            re.search(r"\b(book|reserve|find|search)\s+(?:a\s+)?(?:flight|air\s*ticket|flight\s*ticket|plane\s*ticket|tickets?)\b", t) or
+            "book flight" in t or
+            "flight booking" in t or
+            re.search(r"\bflight(?:s)?\s+(?:from|to)\b", t)
+        ):
+            origin_loc = resolve_user_location()
+            details = extract_flight_details(raw_text, default_origin=origin_loc, is_reply=False)
+            origin = details["origin"]
+            dest = details["destination"]
+            date = details["date"] or "tomorrow"
+            site = details["site"]
 
-        # 11. Reminders (Universal Robust Matching)
+            if not dest:
+                self.pending_flight = {
+                    "step": "awaiting_destination_date",
+                    "origin": origin
+                }
+                return {
+                    "handled": True,
+                    "response": f"Where would you like to fly to from {origin}, and on what date? (I can book via Google Flights, MakeMyTrip, Skyscanner, or Expedia.)",
+                    "tool": "book_flight_tickets",
+                    "pending_flight": self.pending_flight,
+                    "booking_data": {"origin": origin, "awaiting_destination": True},
+                    "verified": True
+                }
+
+            if not site:
+                self.pending_flight = {
+                    "step": "awaiting_site",
+                    "origin": origin,
+                    "destination": dest,
+                    "date": date
+                }
+                return {
+                    "handled": True,
+                    "response": f"From which site would you like to book your flight from {origin} to {dest} on {date}? (Google Flights, MakeMyTrip, Skyscanner, or Expedia)",
+                    "tool": "book_flight_tickets",
+                    "pending_flight": self.pending_flight,
+                    "booking_data": {
+                        "origin": origin,
+                        "destination": dest,
+                        "date": date,
+                        "awaiting_site": True
+                    },
+                    "verified": True
+                }
+
+            # Everything provided in one command!
+            self.pending_flight = None
+            tool_res = await registry.execute(
+                "book_flight_tickets",
+                {"destination": dest, "origin": origin, "date": date, "preferred_site": site}
+            )
+            res_data = tool_res.get("result", {})
+            return {
+                "handled": True,
+                "response": res_data.get("message", f"Redirecting to {site} for flights from {origin} to {dest}."),
+                "action": "open_url",
+                "url": res_data.get("url"),
+                "booking_data": res_data.get("booking_data"),
+                "tool": "book_flight_tickets",
+                "verified": True
+            }
+
+        # 12. Reminders (Universal Robust Matching)
         if re.search(r"\b(list my reminders|show( all)? reminders|what are my reminders|check reminders)\b", t):
             tool_res = await registry.execute("list_reminders", {})
             msg = tool_res.get("result", {}).get("message", "You have no active reminders.")

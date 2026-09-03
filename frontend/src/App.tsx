@@ -132,9 +132,20 @@ export const App: React.FC = () => {
             tool: data.tool,
             verified: data.verified,
             action: data.action,
+            url: data.url,
+            booking_data: data.booking_data,
             timestamp: timeStr
           }
         ]);
+
+        // Auto-open URL in browser window if requested
+        if (data.action === 'open_url' && data.url) {
+          try {
+            window.open(data.url, '_blank');
+          } catch (e) {
+            console.debug('Auto-open URL popup note:', e);
+          }
+        }
 
         if (data.tool === 'create_reminder' || data.tool === 'delete_reminder') {
           setRemindersRefreshKey((k) => k + 1);

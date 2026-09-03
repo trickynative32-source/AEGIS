@@ -7,6 +7,19 @@ export type AssistantState =
   | 'CAMERA_ACTIVE'
   | 'ERROR';
 
+export interface FlightBookingData {
+  origin: string;
+  origin_code?: string;
+  destination: string;
+  dest_code?: string;
+  date: string;
+  iso_date?: string;
+  site?: string;
+  url?: string;
+  awaiting_site?: boolean;
+  awaiting_destination?: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -14,6 +27,8 @@ export interface ChatMessage {
   tool?: string;
   verified?: boolean;
   action?: string;
+  url?: string;
+  booking_data?: FlightBookingData;
   timestamp: string;
   isVoice?: boolean;
 }

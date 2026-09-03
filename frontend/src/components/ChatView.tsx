@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { 
   Bot, User, CheckCircle2, AlertCircle, Wrench, Volume2, Square, 
-  Copy, Check, Sparkles, Terminal, ArrowRight, ShieldCheck, Zap
+  Copy, Check, Sparkles, Terminal, ArrowRight, ShieldCheck, Zap,
+  Plane, ExternalLink, Calendar
 } from 'lucide-react';
 import { ChatMessage, AssistantState } from '../types';
 
@@ -159,6 +160,99 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Verified & Executed</span>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Holographic Flight Booking Card */}
+                  {msg.booking_data && (
+                    <div className="mt-3 p-3.5 rounded-2xl bg-slate-950/80 border border-cyan-500/40 shadow-lg shadow-cyan-950/40 space-y-3 animate-fade-in">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-cyan-950/80 border border-cyan-400/50 flex items-center justify-center text-cyan-300 shadow-sm">
+                            <Plane className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-bold block">
+                              Flight Booking &bull; {msg.booking_data.site || 'Portal Redirection'}
+                            </span>
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
+                              <span>{msg.booking_data.origin}</span>
+                              {msg.booking_data.origin_code && (
+                                <span className="font-mono text-[10px] text-cyan-300 px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/30">
+                                  {msg.booking_data.origin_code}
+                                </span>
+                              )}
+                              <ArrowRight className="w-3 h-3 text-cyan-400" />
+                              <span>{msg.booking_data.destination}</span>
+                              {msg.booking_data.dest_code && (
+                                <span className="font-mono text-[10px] text-purple-300 px-1.5 py-0.5 rounded bg-purple-950/80 border border-purple-500/30">
+                                  {msg.booking_data.dest_code}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {msg.booking_data.date && (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-700 text-[11px] font-mono text-slate-300">
+                            <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>{msg.booking_data.date}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Direct Redirection Button */}
+                      {(msg.url || msg.booking_data.url) && (
+                        <a
+                          href={msg.url || msg.booking_data.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 via-teal-600 to-indigo-600 hover:from-cyan-500 hover:via-teal-500 hover:to-indigo-500 text-white font-bold text-xs tracking-wide transition-all shadow-md hover:shadow-cyan-500/25 active:scale-95 text-center"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Open {msg.booking_data.site || 'Portal'} with Pre-filled Flight ↗</span>
+                        </a>
+                      )}
+
+                      {/* Portal Selection Chips if awaiting site */}
+                      {msg.booking_data.awaiting_site && onQuickReply && (
+                        <div className="space-y-1.5 pt-1">
+                          <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
+                            Tap Preferred Booking Portal:
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['Google Flights', 'MakeMyTrip', 'Skyscanner', 'Expedia'].map((site) => (
+                              <button
+                                key={site}
+                                onClick={() => onQuickReply(site)}
+                                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-400 text-[11px] font-semibold text-slate-200 hover:text-cyan-300 transition active:scale-95"
+                              >
+                                {site}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Destination Suggestion Chips if awaiting destination */}
+                      {msg.booking_data.awaiting_destination && onQuickReply && (
+                        <div className="space-y-1.5 pt-1">
+                          <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
+                            Quick Destination Responses:
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['To Delhi tomorrow', 'To Mumbai on Friday', 'To Goa next week', 'To Dubai on MakeMyTrip'].map((prompt) => (
+                              <button
+                                key={prompt}
+                                onClick={() => onQuickReply(prompt)}
+                                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-400 text-[11px] font-medium text-slate-300 hover:text-cyan-300 transition active:scale-95"
+                              >
+                                {prompt}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
