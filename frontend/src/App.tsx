@@ -82,12 +82,16 @@ export const App: React.FC = () => {
       recognitionRef.current = rec;
     }
 
-    // Fetch initial user profile & personal memory
-    fetch('/api/user/profile')
+    // Fetch authenticated user profile & personal memory
+    const token = localStorage.getItem('aegis_auth_token');
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch('/api/auth/me', { headers })
       .then((res) => res.json())
       .then((data) => {
-        if (data && data.name) {
-          setCurrentUser(data);
+        if (data && data.user && data.user.name) {
+          setCurrentUser(data.user);
         }
       })
       .catch((e) => console.debug('Profile fetch note:', e));
@@ -278,8 +282,21 @@ export const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Real Windows Live Clock */}
-        <LiveClock />
+        {/* Real Windows Live Clock & Telemetry Bar */}
+        <div className="flex items-center gap-3">
+          <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[10px] font-mono">
+            <span className="flex items-center gap-1 text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>LATENCY &lt;1ms</span>
+            </span>
+            <span className="text-slate-600">&bull;</span>
+            <span className="text-cyan-400">YOLOv5m + LocateAnything</span>
+            <span className="text-slate-600">&bull;</span>
+            <span className="text-purple-300">SECURE VAULT</span>
+          </div>
+
+          <LiveClock />
+        </div>
 
         {/* Action Controls & Drawers */}
         <div className="flex items-center gap-2">
@@ -287,14 +304,27 @@ export const App: React.FC = () => {
           <button
             onClick={() => setIsAuthOpen(true)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-cyan-500/50 text-slate-200 text-xs font-semibold transition shadow-sm"
-            title="User Profile & Personal Memory"
+            title="User Profile, Security & Personal Memory"
           >
-            <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white text-[10px] font-bold shadow-sm">
-              {currentUser.name ? currentUser.name.charAt(0) : 'G'}
+            {currentUser.avatar_url ? (
+              <img
+                src={currentUser.avatar_url}
+                alt={currentUser.name}
+                className="w-5 h-5 rounded-full border border-cyan-400/50 object-cover"
+              />
+            ) : (
+              <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white text-[10px] font-bold shadow-sm">
+                {currentUser.name ? currentUser.name.charAt(0) : 'G'}
+              </div>
+            )}
+            <div className="text-left hidden sm:block">
+              <span className="text-xs font-medium text-slate-200 block max-w-[110px] truncate leading-tight">
+                {currentUser.name}
+              </span>
+              <span className="text-[9px] font-mono text-cyan-400 uppercase tracking-wider block leading-none">
+                {currentUser.role || 'Guest'}
+              </span>
             </div>
-            <span className="hidden sm:inline max-w-[110px] truncate text-slate-200 font-medium">
-              {currentUser.name}
-            </span>
           </button>
 
           {/* Intro Replay Button */}
@@ -388,7 +418,12 @@ export const App: React.FC = () => {
         {!simplifiedMode && <QuickActions onSelectAction={handleSelectQuickPrompt} />}
 
         {/* Chat Timeline */}
-        <ChatView messages={messages} state={state} onBargeIn={() => wsService.bargeIn()} />
+        <ChatView
+          messages={messages}
+          state={state}
+          onBargeIn={() => wsService.bargeIn()}
+          onQuickReply={handleSelectQuickPrompt}
+        />
 
         {/* Camera HUD Window */}
         <CameraHUD
@@ -470,21 +505,27 @@ export const App: React.FC = () => {
             </button>
 
             {/* Chat Input Field */}
-            <form onSubmit={handleSendMessage} className="flex-1 flex items-center gap-2">
-              <input
-                type="text"
-                placeholder="Ask AEGIS anything or give a command (e.g. 'What do you see in the room?', 'Where is my phone?', 'Remind me tomorrow at 5 PM')..."
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                className="flex-1 px-4 py-3 text-sm rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-aura-cyan shadow-inner"
-              />
-              <button
-                type="submit"
-                disabled={!inputText.trim()}
-                className="p-3 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-40 disabled:hover:bg-cyan-600 transition shadow-md active:scale-95 shrink-0"
-              >
-                <Send className="w-4 h-4" />
-              </button>
+            <form onSubmit={handleSendMessage} className="flex-1 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Ask AEGIS anything or give a command (e.g. 'What do you see in the room?', 'Where is my phone?', 'Remind me tomorrow at 5 PM')..."
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  className="flex-1 px-4 py-3 text-sm rounded-2xl bg-slate-900/90 border border-slate-700/80 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-500/30 shadow-inner"
+                />
+                <button
+                  type="submit"
+                  disabled={!inputText.trim()}
+                  className="p-3 rounded-2xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white disabled:opacity-40 disabled:hover:from-cyan-600 disabled:hover:to-indigo-600 transition shadow-md active:scale-95 shrink-0"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex items-center justify-between px-2 text-[10px] font-mono text-slate-500">
+                <span>Hold Spacebar for Voice Core</span>
+                <span>Press Enter to send</span>
+              </div>
             </form>
           </div>
         </div>

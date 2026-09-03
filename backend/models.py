@@ -73,12 +73,22 @@ class UserProfile(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String(100), unique=True, index=True, nullable=False)
     name = Column(String(100), nullable=False)
-    email = Column(String(150), nullable=True)
+    email = Column(String(150), unique=True, index=True, nullable=True)
+    hashed_password = Column(String(255), nullable=True)
+    salt = Column(String(64), nullable=True)
+    session_token = Column(String(255), unique=True, index=True, nullable=True)
     avatar_url = Column(String(255), nullable=True)
-    auth_provider = Column(String(50), default="google")
+    auth_provider = Column(String(50), default="google")  # "google", "local", "guest"
     role = Column(String(100), nullable=True, default="User")
+    phone = Column(String(50), nullable=True)
+    location = Column(String(100), nullable=True)
+    timezone = Column(String(50), default="Asia/Kolkata")
+    emergency_contact_name = Column(String(100), nullable=True)
+    emergency_contact_phone = Column(String(50), nullable=True)
+    bio = Column(Text, nullable=True)
     personal_notes = Column(Text, nullable=True)
     preferences_json = Column(Text, nullable=True)
+    accessibility_settings_json = Column(Text, nullable=True)
     last_login = Column(DateTime, default=datetime.datetime.utcnow)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
@@ -114,6 +124,46 @@ class VisualMemoryItem(BaseModel):
     confidence: float = 0.9
     is_user_saved: bool = False
 
+class UserRegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: Optional[str] = "Professional"
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    bio: Optional[str] = None
+    personal_notes: Optional[str] = None
+    preferences: Optional[Dict[str, Any]] = None
+
+class UserLoginRequest(BaseModel):
+    email: str
+    password: str
+
+class GoogleLoginRequest(BaseModel):
+    name: str
+    email: str
+    avatar_url: Optional[str] = None
+    google_id: Optional[str] = None
+    role: Optional[str] = "User"
+    personal_notes: Optional[str] = None
+    location: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+
+class UserProfileUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    bio: Optional[str] = None
+    personal_notes: Optional[str] = None
+    preferences: Optional[Dict[str, Any]] = None
+    accessibility_settings: Optional[Dict[str, Any]] = None
+
 class UserProfileCreate(BaseModel):
     user_id: Optional[str] = None
     name: str
@@ -131,7 +181,15 @@ class UserProfileResponse(BaseModel):
     avatar_url: Optional[str] = None
     auth_provider: str = "google"
     role: Optional[str] = "User"
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    timezone: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    bio: Optional[str] = None
     personal_notes: Optional[str] = None
     preferences: Optional[Dict[str, Any]] = None
+    accessibility_settings: Optional[Dict[str, Any]] = None
     last_login: Optional[datetime.datetime] = None
+
 

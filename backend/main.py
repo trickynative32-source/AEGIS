@@ -7,18 +7,24 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Depends, HTTPException, Body
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Depends, HTTPException, Body, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 import datetime
+import secrets
 
 from backend.config import settings
 from backend.database import init_db, get_db, SessionLocal
 from backend.models import (
     Reminder, Memory, Routine, VisualMemory, Conversation, UserProfile,
-    MessageCreate, ReminderCreate, MemoryItem, UserProfileCreate
+    MessageCreate, ReminderCreate, MemoryItem, UserProfileCreate,
+    UserRegisterRequest, UserLoginRequest, GoogleLoginRequest, UserProfileUpdateRequest
+)
+from backend.services.auth import (
+    hash_password, verify_password, generate_session_token,
+    sync_user_to_memory, serialize_user_profile
 )
 from backend.tools.registry import registry
 import backend.tools  # Register all tools
@@ -326,113 +332,258 @@ async def generate_tts(text: str = Form(...)):
     audio_b64 = await tts_service.generate_speech_audio_base64(text)
     return {"audio_base64": audio_b64}
 
-# User Profile & Authentication Endpoints
-@app.get("/api/user/profile")
-async def get_user_profile():
+# =====================================================================
+# Secure User Authentication & Comprehensive Profile Endpoints
+# =====================================================================
+
+@app.post("/api/auth/register")
+async def register_user(payload: UserRegisterRequest):
     db = SessionLocal()
     try:
-        profile = db.query(UserProfile).order_by(UserProfile.last_login.desc()).first()
-        if not profile:
-            return {
-                "user_id": "guest",
-                "name": "Guest Explorer",
-                "email": None,
-                "avatar_url": None,
-                "auth_provider": "guest",
-                "role": "Guest",
-                "personal_notes": None,
-                "preferences": {}
-            }
-        prefs = {}
-        if profile.preferences_json:
-            try:
-                prefs = json.loads(profile.preferences_json)
-            except Exception:
-                pass
+        clean_email = payload.email.strip().lower()
+        if not clean_email or "@" not in clean_email:
+            raise HTTPException(status_code=400, detail="Valid email address is required.")
+        if len(payload.password) < 4:
+            raise HTTPException(status_code=400, detail="Password must be at least 4 characters long.")
+
+        existing = db.query(UserProfile).filter(UserProfile.email == clean_email).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="An account with this email is already registered.")
+
+        salt, hashed_pwd = hash_password(payload.password)
+        session_token = generate_session_token()
+        user_id = f"usr_{secrets.token_hex(6)}"
+
+        profile = UserProfile(
+            user_id=user_id,
+            name=payload.name.strip(),
+            email=clean_email,
+            hashed_password=hashed_pwd,
+            salt=salt,
+            session_token=session_token,
+            auth_provider="local",
+            role=payload.role or "Professional",
+            phone=payload.phone,
+            location=payload.location,
+            emergency_contact_name=payload.emergency_contact_name,
+            emergency_contact_phone=payload.emergency_contact_phone,
+            bio=payload.bio,
+            personal_notes=payload.personal_notes,
+            preferences_json=json.dumps(payload.preferences or {}),
+            last_login=datetime.datetime.utcnow()
+        )
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+
+        # Sync all full information to AEGIS long-term memory
+        sync_user_to_memory(profile)
+
         return {
-            "user_id": profile.user_id,
-            "name": profile.name,
-            "email": profile.email,
-            "avatar_url": profile.avatar_url,
-            "auth_provider": profile.auth_provider,
-            "role": profile.role,
-            "personal_notes": profile.personal_notes,
-            "preferences": prefs,
-            "last_login": profile.last_login.isoformat() if profile.last_login else None
+            "status": "success",
+            "message": f"Account created successfully for {profile.name}!",
+            "token": session_token,
+            "user": serialize_user_profile(profile)
         }
     finally:
         db.close()
 
-@app.post("/api/user/login")
-async def login_user(payload: UserProfileCreate):
+@app.post("/api/auth/login")
+async def login_user(payload: UserLoginRequest):
     db = SessionLocal()
     try:
-        user_id = payload.user_id or f"usr_{payload.name.lower().replace(' ', '_')}"
-        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        clean_email = payload.email.strip().lower()
+        profile = db.query(UserProfile).filter(UserProfile.email == clean_email).first()
+        if not profile or not profile.hashed_password or not profile.salt:
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+        if not verify_password(payload.password, profile.salt, profile.hashed_password):
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+        session_token = generate_session_token()
+        profile.session_token = session_token
+        profile.last_login = datetime.datetime.utcnow()
+        db.commit()
+        db.refresh(profile)
+
+        # Re-sync memory
+        sync_user_to_memory(profile)
+
+        return {
+            "status": "success",
+            "message": f"Welcome back, {profile.name}!",
+            "token": session_token,
+            "user": serialize_user_profile(profile)
+        }
+    finally:
+        db.close()
+
+@app.post("/api/auth/google")
+async def google_login(payload: GoogleLoginRequest):
+    db = SessionLocal()
+    try:
+        clean_email = payload.email.strip().lower()
+        profile = db.query(UserProfile).filter(UserProfile.email == clean_email).first()
+        session_token = generate_session_token()
+
         if not profile:
+            user_id = f"usr_g_{secrets.token_hex(6)}"
             profile = UserProfile(
                 user_id=user_id,
-                name=payload.name,
-                email=payload.email,
-                avatar_url=payload.avatar_url,
-                auth_provider=payload.auth_provider,
+                name=payload.name.strip(),
+                email=clean_email,
+                avatar_url=payload.avatar_url or f"https://api.dicebear.com/7.x/bottts/svg?seed={payload.name}",
+                auth_provider="google",
+                session_token=session_token,
                 role=payload.role or "User",
+                location=payload.location,
+                emergency_contact_name=payload.emergency_contact_name,
+                emergency_contact_phone=payload.emergency_contact_phone,
                 personal_notes=payload.personal_notes,
-                preferences_json=json.dumps(payload.preferences or {})
+                last_login=datetime.datetime.utcnow()
             )
             db.add(profile)
         else:
-            profile.name = payload.name
-            if payload.email:
-                profile.email = payload.email
+            profile.name = payload.name.strip()
             if payload.avatar_url:
                 profile.avatar_url = payload.avatar_url
             if payload.role:
                 profile.role = payload.role
+            if payload.location:
+                profile.location = payload.location
+            if payload.emergency_contact_name:
+                profile.emergency_contact_name = payload.emergency_contact_name
+            if payload.emergency_contact_phone:
+                profile.emergency_contact_phone = payload.emergency_contact_phone
             if payload.personal_notes:
                 profile.personal_notes = payload.personal_notes
-            if payload.preferences:
-                profile.preferences_json = json.dumps(payload.preferences)
+            profile.auth_provider = "google"
+            profile.session_token = session_token
             profile.last_login = datetime.datetime.utcnow()
 
         db.commit()
         db.refresh(profile)
 
-        # Sync profile directly into AEGIS memory so the assistant remembers the user!
-        memory_store.set_memory("user_name", profile.name, category="profile")
-        if profile.email:
-            memory_store.set_memory("user_email", profile.email, category="profile")
-        if profile.role:
-            memory_store.set_memory("user_role", profile.role, category="profile")
-        if profile.personal_notes:
-            memory_store.set_memory("user_notes", profile.personal_notes, category="profile")
-
-        prefs = {}
-        if profile.preferences_json:
-            try:
-                prefs = json.loads(profile.preferences_json)
-            except Exception:
-                pass
+        # Full memory sync
+        sync_user_to_memory(profile)
 
         return {
             "status": "success",
-            "message": f"Welcome, {profile.name}!",
-            "profile": {
-                "user_id": profile.user_id,
-                "name": profile.name,
-                "email": profile.email,
-                "avatar_url": profile.avatar_url,
-                "auth_provider": profile.auth_provider,
-                "role": profile.role,
-                "personal_notes": profile.personal_notes,
-                "preferences": prefs
-            }
+            "message": f"Google Authentication successful! Welcome, {profile.name}.",
+            "token": session_token,
+            "user": serialize_user_profile(profile)
         }
     finally:
         db.close()
 
+@app.get("/api/auth/me")
+async def get_current_user_profile(authorization: Optional[str] = Header(None)):
+    db = SessionLocal()
+    try:
+        token = None
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization.split("Bearer ")[1].strip()
+
+        profile = None
+        if token:
+            profile = db.query(UserProfile).filter(UserProfile.session_token == token).first()
+
+        if not profile:
+            profile = db.query(UserProfile).order_by(UserProfile.last_login.desc()).first()
+
+        return {"status": "success", "user": serialize_user_profile(profile)}
+    finally:
+        db.close()
+
+@app.put("/api/auth/profile")
+async def update_user_profile(payload: UserProfileUpdateRequest, authorization: Optional[str] = Header(None)):
+    db = SessionLocal()
+    try:
+        token = None
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization.split("Bearer ")[1].strip()
+
+        profile = None
+        if token:
+            profile = db.query(UserProfile).filter(UserProfile.session_token == token).first()
+        if not profile:
+            profile = db.query(UserProfile).order_by(UserProfile.last_login.desc()).first()
+
+        if not profile:
+            raise HTTPException(status_code=404, detail="No active profile found to update.")
+
+        if payload.name is not None:
+            profile.name = payload.name.strip()
+        if payload.role is not None:
+            profile.role = payload.role.strip()
+        if payload.phone is not None:
+            profile.phone = payload.phone.strip()
+        if payload.location is not None:
+            profile.location = payload.location.strip()
+        if payload.emergency_contact_name is not None:
+            profile.emergency_contact_name = payload.emergency_contact_name.strip()
+        if payload.emergency_contact_phone is not None:
+            profile.emergency_contact_phone = payload.emergency_contact_phone.strip()
+        if payload.bio is not None:
+            profile.bio = payload.bio.strip()
+        if payload.personal_notes is not None:
+            profile.personal_notes = payload.personal_notes.strip()
+        if payload.preferences is not None:
+            profile.preferences_json = json.dumps(payload.preferences)
+        if payload.accessibility_settings is not None:
+            profile.accessibility_settings_json = json.dumps(payload.accessibility_settings)
+
+        db.commit()
+        db.refresh(profile)
+
+        # Re-sync memory
+        sync_user_to_memory(profile)
+
+        return {
+            "status": "success",
+            "message": "Profile and memory successfully updated!",
+            "user": serialize_user_profile(profile)
+        }
+    finally:
+        db.close()
+
+@app.post("/api/auth/logout")
+async def logout_user(authorization: Optional[str] = Header(None)):
+    db = SessionLocal()
+    try:
+        token = None
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization.split("Bearer ")[1].strip()
+
+        if token:
+            profile = db.query(UserProfile).filter(UserProfile.session_token == token).first()
+            if profile:
+                profile.session_token = None
+                db.commit()
+
+        return {"status": "success", "message": "Successfully logged out."}
+    finally:
+        db.close()
+
+# Backwards compatibility endpoints
+@app.get("/api/user/profile")
+async def get_user_profile(authorization: Optional[str] = Header(None)):
+    res = await get_current_user_profile(authorization)
+    return res["user"]
+
+@app.post("/api/user/login")
+async def legacy_user_login(payload: UserProfileCreate):
+    res = await google_login(GoogleLoginRequest(
+        name=payload.name,
+        email=payload.email or f"{payload.name.lower().replace(' ', '')}@local.aegis",
+        avatar_url=payload.avatar_url,
+        role=payload.role,
+        personal_notes=payload.personal_notes
+    ))
+    return {"status": "success", "message": res["message"], "profile": res["user"]}
+
 @app.post("/api/user/logout")
-async def logout_user():
+async def legacy_logout():
     return {"status": "success", "message": "Logged out."}
 
 # WebSocket Endpoint

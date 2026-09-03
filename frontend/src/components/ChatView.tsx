@@ -1,19 +1,49 @@
-import React, { useEffect, useRef } from 'react';
-import { Bot, User, CheckCircle2, AlertCircle, Wrench, Volume2, Square } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { 
+  Bot, User, CheckCircle2, AlertCircle, Wrench, Volume2, Square, 
+  Copy, Check, Sparkles, Terminal, ArrowRight, ShieldCheck, Zap
+} from 'lucide-react';
 import { ChatMessage, AssistantState } from '../types';
 
 interface ChatViewProps {
   messages: ChatMessage[];
   state: AssistantState;
   onBargeIn: () => void;
+  onQuickReply?: (prompt: string) => void;
 }
 
-export const ChatView: React.FC<ChatViewProps> = ({ messages, state, onBargeIn }) => {
+export const ChatView: React.FC<ChatViewProps> = ({ 
+  messages, 
+  state, 
+  onBargeIn,
+  onQuickReply 
+}) => {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, state]);
+
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1500);
+  };
+
+  const handlePlayAudio = (id: string, text: string) => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+      utterance.onend = () => setSpeakingMsgId(null);
+      utterance.onerror = () => setSpeakingMsgId(null);
+      setSpeakingMsgId(id);
+      window.speechSynthesis.speak(utterance);
+    }
+  };
 
   const lastAssistantMsg = [...messages].reverse().find((m) => m.role === 'assistant');
 
@@ -21,18 +51,23 @@ export const ChatView: React.FC<ChatViewProps> = ({ messages, state, onBargeIn }
     <div className="flex-1 flex flex-col h-full overflow-hidden relative">
       {/* Live Speaking Subtitle Banner with Barge-in Interruption */}
       {state === 'SPEAKING' && lastAssistantMsg && (
-        <div className="absolute top-2 left-4 right-4 z-20 flex items-center justify-between p-3 rounded-xl bg-cyan-950/90 border border-cyan-400/50 shadow-lg shadow-cyan-950/50 backdrop-blur-md animate-fade-in">
+        <div className="absolute top-2 left-4 right-4 z-20 flex items-center justify-between p-3.5 rounded-2xl bg-cyan-950/90 border border-cyan-400/60 shadow-xl shadow-cyan-950/60 backdrop-blur-xl animate-fade-in">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="p-2 rounded-lg bg-cyan-500/20 text-aura-cyan animate-pulse">
+            <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-300 animate-pulse shrink-0">
               <Volume2 className="w-5 h-5" />
             </div>
-            <p className="text-sm font-medium text-slate-100 truncate">
-              <span className="text-aura-cyan font-semibold">AEGIS:</span> {lastAssistantMsg.content}
-            </p>
+            <div className="overflow-hidden">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-bold block">
+                AEGIS Vocal Transmission
+              </span>
+              <p className="text-xs sm:text-sm font-medium text-slate-100 truncate">
+                {lastAssistantMsg.content}
+              </p>
+            </div>
           </div>
           <button
             onClick={onBargeIn}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/30 hover:bg-rose-500/50 border border-rose-500/50 text-rose-300 text-xs font-semibold tracking-wide transition-all shadow-sm active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/25 hover:bg-rose-500/40 border border-rose-500/50 text-rose-300 text-xs font-bold tracking-wide transition shadow-sm active:scale-95 shrink-0"
             title="Interrupt speech (Barge-in)"
           >
             <Square className="w-3.5 h-3.5 fill-rose-300" />
@@ -42,74 +77,150 @@ export const ChatView: React.FC<ChatViewProps> = ({ messages, state, onBargeIn }
       )}
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center text-slate-500 text-xs py-8">
-            <p>Start a conversation by typing below, tapping the Core, or holding <span className="text-cyan-400 font-semibold">Spacebar</span>.</p>
+            <div className="w-12 h-12 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-center mb-3 text-cyan-400/60">
+              <Terminal className="w-6 h-6" />
+            </div>
+            <p className="text-slate-400 font-medium">Ready for your input.</p>
+            <p className="text-slate-500 text-[11px] mt-1">
+              Type a request, click the Core, or hold <span className="text-cyan-400 font-semibold">Spacebar</span> for voice.
+            </p>
           </div>
         )}
 
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex gap-3 max-w-[85%] ${
-              msg.role === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto'
-            }`}
-          >
-            <div
-              className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-md ${
-                msg.role === 'user'
-                  ? 'bg-blue-600/30 border border-blue-400/40 text-blue-300'
-                  : 'bg-cyan-950/80 border border-cyan-500/40 text-aura-cyan'
-              }`}
-            >
-              {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-            </div>
+        {messages.map((msg) => {
+          const isUser = msg.role === 'user';
+          const isAlert = msg.role === 'system';
 
-            <div className="flex flex-col gap-1.5">
+          if (isAlert) {
+            return (
+              <div key={msg.id} className="flex justify-center my-2">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-300 text-xs font-mono shadow-sm">
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span>{msg.content}</span>
+                  <span className="text-[10px] text-amber-400/60 ml-1">{msg.timestamp}</span>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={msg.id}
+              className={`flex gap-3 max-w-[88%] sm:max-w-[80%] ${
+                isUser ? 'ml-auto flex-row-reverse' : 'mr-auto'
+              } group`}
+            >
+              {/* Avatar Hologram */}
               <div
-                className={`p-3.5 rounded-2xl text-sm leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-md rounded-tr-none'
-                    : 'glass-card text-slate-200 rounded-tl-none border-slate-700/60 shadow-lg'
+                className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 shadow-md transition-all ${
+                  isUser
+                    ? 'bg-gradient-to-tr from-indigo-600 to-purple-600 border border-indigo-400/40 text-white'
+                    : 'bg-gradient-to-tr from-cyan-600 to-blue-600 border border-cyan-400/50 text-white shadow-cyan-950/50'
                 }`}
               >
-                <div className="whitespace-pre-wrap">{msg.content}</div>
+                {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+              </div>
 
-                {/* Tool Verification Badge */}
-                {msg.tool && (
-                  <div className="mt-2.5 pt-2 border-t border-slate-700/40 flex items-center gap-1.5 text-xs">
-                    <Wrench className="w-3.5 h-3.5 text-cyan-400" />
-                    <span className="font-mono text-cyan-300">{msg.tool}</span>
-                    {msg.verified ? (
-                      <span className="flex items-center gap-1 ml-auto text-emerald-400 font-medium">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Verified
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 ml-auto text-amber-400 font-medium">
-                        <AlertCircle className="w-3.5 h-3.5" /> Checked
-                      </span>
+              <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                {/* Sender Tag & Timestamp */}
+                <div className={`flex items-center gap-2 px-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                  <span className="text-[11px] font-bold text-slate-300">
+                    {isUser ? 'You' : 'AEGIS Core'}
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-500">
+                    {msg.timestamp} {msg.isVoice ? '� Voice' : ''}
+                  </span>
+                </div>
+
+                {/* Message Bubble Card */}
+                <div
+                  className={`p-4 rounded-3xl text-sm leading-relaxed relative ${
+                    isUser
+                      ? 'cyber-card-user text-slate-100 rounded-tr-none'
+                      : 'cyber-card text-slate-200 rounded-tl-none'
+                  }`}
+                >
+                  <div className="whitespace-pre-wrap select-text font-normal">
+                    {msg.content}
+                  </div>
+
+                  {/* Tool Execution Telemetry Pill */}
+                  {msg.tool && (
+                    <div className="mt-3 pt-2.5 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-700 font-mono text-cyan-300 text-[11px]">
+                        <Wrench className="w-3 h-3 text-cyan-400" />
+                        <span>tool: {msg.tool}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-400">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Verified & Executed</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Card Action Controls (Hover Reveal) */}
+                  <div className={`mt-2 flex items-center gap-1 pt-1 opacity-80 group-hover:opacity-100 transition-opacity ${isUser ? 'justify-end' : 'justify-start'}`}>
+                    <button
+                      onClick={() => handleCopy(msg.id, msg.content)}
+                      className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-cyan-300 text-[11px] transition"
+                      title="Copy to clipboard"
+                    >
+                      {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+
+                    {!isUser && (
+                      <button
+                        onClick={() => handlePlayAudio(msg.id, msg.content)}
+                        className={`p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-cyan-300 text-[11px] transition ${
+                          speakingMsgId === msg.id ? 'text-cyan-400 animate-pulse' : ''
+                        }`}
+                        title="Replay speech audio"
+                      >
+                        <Volume2 className="w-3.5 h-3.5" />
+                      </button>
                     )}
+                  </div>
+                </div>
+
+                {/* Contextual Smart Follow-Up Suggestions for Assistant Messages */}
+                {!isUser && onQuickReply && (
+                  <div className="flex items-center gap-1.5 pt-1 overflow-x-auto no-scrollbar">
+                    <button
+                      onClick={() => onQuickReply('Tell me more about this')}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-slate-700/60 hover:border-cyan-500/40 text-[10px] font-medium text-slate-400 hover:text-cyan-300 transition shrink-0"
+                    >
+                      <ArrowRight className="w-2.5 h-2.5" />
+                      <span>Elaborate</span>
+                    </button>
+                    <button
+                      onClick={() => onQuickReply('What can you see in front of the camera?')}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-slate-700/60 hover:border-cyan-500/40 text-[10px] font-medium text-slate-400 hover:text-cyan-300 transition shrink-0"
+                    >
+                      <Zap className="w-2.5 h-2.5 text-cyan-400" />
+                      <span>Check Camera</span>
+                    </button>
                   </div>
                 )}
               </div>
-
-              <span className="text-[10px] text-slate-500 px-1">
-                {msg.timestamp} {msg.isVoice ? '• Voice' : ''}
-              </span>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
-        {/* State Indicator */}
+        {/* State Indicators */}
         {state === 'THINKING' && (
-          <div className="flex items-center gap-2 text-xs font-mono text-aura-amber bg-amber-950/30 border border-amber-500/30 px-3 py-1.5 rounded-lg w-fit">
-            <span className="animate-spin text-sm">✦</span> Reasoning & planning action...
+          <div className="flex items-center gap-2 text-xs font-mono text-amber-300 bg-amber-950/40 border border-amber-500/40 px-3.5 py-2 rounded-xl w-fit animate-pulse">
+            <span className="animate-spin text-sm">?</span>
+            <span>Synthesizing neural model & planning action...</span>
           </div>
         )}
         {state === 'EXECUTING' && (
-          <div className="flex items-center gap-2 text-xs font-mono text-aura-cyan bg-cyan-950/30 border border-cyan-500/30 px-3 py-1.5 rounded-lg w-fit">
-            <span className="animate-pulse text-sm">⚡</span> Executing computer tool...
+          <div className="flex items-center gap-2 text-xs font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-500/40 px-3.5 py-2 rounded-xl w-fit animate-pulse">
+            <Zap className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Executing system automation tool...</span>
           </div>
         )}
 
