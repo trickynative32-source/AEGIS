@@ -131,7 +131,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     {isUser ? 'You' : 'AEGIS Core'}
                   </span>
                   <span className="text-[10px] font-mono text-slate-500">
-                    {msg.timestamp} {msg.isVoice ? '• Voice' : ''}
+                    {msg.timestamp} {msg.isVoice ? 'Â• Voice' : ''}
                   </span>
                 </div>
 
@@ -228,4 +228,4 @@ export const ChatView: React.FC<ChatViewProps> = ({
       </div>
     </div>
   );
-};
+};

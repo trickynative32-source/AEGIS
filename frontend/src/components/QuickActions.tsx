@@ -19,23 +19,25 @@ export const QuickActions: React.FC<QuickActionsProps> = ({ onSelectAction }) =>
   ];
 
   return (
-    <div className="flex items-center gap-2 overflow-x-auto py-2 px-4 no-scrollbar">
-      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
-        Quick Prompts:
-      </span>
-      {actions.map((act, i) => {
-        const Icon = act.icon;
-        return (
-          <button
-            key={i}
-            onClick={() => onSelectAction(act.prompt)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium whitespace-nowrap transition-all hover:scale-105 active:scale-95 shadow-sm ${act.color}`}
-          >
-            <Icon className="w-3.5 h-3.5" />
-            <span>{act.label}</span>
-          </button>
-        );
-      })}
+    <div className="relative w-full overflow-hidden px-4 py-1.5 shrink-0">
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth">
+        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest shrink-0 mr-1">
+          SUGGESTIONS:
+        </span>
+        {actions.map((act, i) => {
+          const Icon = act.icon;
+          return (
+            <button
+              key={i}
+              onClick={() => onSelectAction(act.prompt)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium whitespace-nowrap transition-all duration-300 hover:scale-105 active:scale-95 shadow-sm backdrop-blur-md hover:brightness-125 ${act.color}`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{act.label}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 };

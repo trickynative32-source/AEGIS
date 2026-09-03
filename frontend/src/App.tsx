@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Mic, Send, Camera, Bell, Workflow, Settings as SettingsIcon,
-  Layers, Volume2, Sparkles, AlertCircle, ShieldAlert, Cpu, User, LogIn
+  Layers, Volume2, Sparkles, AlertCircle, ShieldAlert, Cpu, User, LogIn, Sliders
 } from 'lucide-react';
 import { wsService } from './services/websocket';
 import { ChatMessage, AssistantState } from './types';
@@ -26,6 +26,7 @@ export const App: React.FC = () => {
   const [inputText, setInputText] = useState<string>('');
   const [isPushToTalkActive, setIsPushToTalkActive] = useState<boolean>(false);
   const [speechPreview, setSpeechPreview] = useState<string>('');
+  const [isAccessibilityOpen, setIsAccessibilityOpen] = useState<boolean>(false);
 
   // User Profile & Intro States
   const [currentUser, setCurrentUser] = useState<UserProfileData>({
@@ -235,20 +236,6 @@ export const App: React.FC = () => {
         highContrast ? 'high-contrast' : ''
       } ${largeFont ? 'large-font' : ''} ${dyslexicFont ? 'font-dyslexic' : ''}`}
     >
-      {/* Top Accessibility Bar */}
-      <AccessibilityBar
-        highContrast={highContrast}
-        largeFont={largeFont}
-        dyslexicFont={dyslexicFont}
-        voiceFirst={voiceFirst}
-        simplifiedMode={simplifiedMode}
-        onToggleHighContrast={() => setHighContrast(!highContrast)}
-        onToggleLargeFont={() => setLargeFont(!largeFont)}
-        onToggleDyslexicFont={() => setDyslexicFont(!dyslexicFont)}
-        onToggleVoiceFirst={() => setVoiceFirst(!voiceFirst)}
-        onToggleSimplifiedMode={() => setSimplifiedMode(!simplifiedMode)}
-      />
-
       {/* Main Header */}
       <header className="flex items-center justify-between px-5 py-3 border-b border-slate-800 glass-panel shrink-0">
         <div className="flex items-center gap-3">
@@ -318,11 +305,11 @@ export const App: React.FC = () => {
               </div>
             )}
             <div className="text-left hidden sm:block">
-              <span className="text-xs font-medium text-slate-200 block max-w-[110px] truncate leading-tight">
+              <span className="text-xs font-semibold text-slate-200 block max-w-[180px] truncate leading-tight">
                 {currentUser.name}
               </span>
               <span className="text-[9px] font-mono text-cyan-400 uppercase tracking-wider block leading-none">
-                {currentUser.role || 'Guest'}
+                {currentUser.role || 'User'}
               </span>
             </div>
           </button>
@@ -381,6 +368,18 @@ export const App: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setIsAccessibilityOpen(!isAccessibilityOpen)}
+            className={`p-2 rounded-xl border transition ${
+              isAccessibilityOpen || highContrast || largeFont || dyslexicFont || voiceFirst || simplifiedMode
+                ? 'bg-cyan-950/80 border-cyan-400/60 text-cyan-300 shadow-sm'
+                : 'bg-slate-900/80 border-slate-700 hover:border-slate-500 text-slate-300'
+            }`}
+            title="Accessibility & Inclusion Settings (SIH26204)"
+          >
+            <Sliders className="w-4 h-4" />
+          </button>
+
+          <button
             onClick={() => setIsSettingsOpen(true)}
             className="p-2 rounded-xl bg-slate-900/80 border border-slate-700 hover:border-slate-500 text-slate-300 transition"
             title="Settings & Privacy"
@@ -390,12 +389,31 @@ export const App: React.FC = () => {
         </div>
       </header>
 
+      {/* Expandable Accessibility Tray (SIH Inclusion) */}
+      {isAccessibilityOpen && (
+        <div className="animate-fade-in border-b border-slate-800 bg-slate-950/90 backdrop-blur-xl shrink-0">
+          <AccessibilityBar
+            highContrast={highContrast}
+            largeFont={largeFont}
+            dyslexicFont={dyslexicFont}
+            voiceFirst={voiceFirst}
+            simplifiedMode={simplifiedMode}
+            onToggleHighContrast={() => setHighContrast(!highContrast)}
+            onToggleLargeFont={() => setLargeFont(!largeFont)}
+            onToggleDyslexicFont={() => setDyslexicFont(!dyslexicFont)}
+            onToggleVoiceFirst={() => setVoiceFirst(!voiceFirst)}
+            onToggleSimplifiedMode={() => setSimplifiedMode(!simplifiedMode)}
+          />
+        </div>
+      )}
+
       {/* Main Workspace */}
       <main className="flex-1 flex flex-col min-h-0 relative">
         {/* Living Conversational Core ("AuraCore") */}
         <AuraCore
           state={state}
           isPushToTalkActive={isPushToTalkActive}
+          isCompact={messages.length > 1}
           onCoreClick={() => {
             if (state === 'SPEAKING') {
               wsService.bargeIn();
@@ -411,7 +429,6 @@ export const App: React.FC = () => {
               .reverse()
               .find((m) => m.role === 'assistant')?.content
           }
-          onQuickAction={handleSelectQuickPrompt}
         />
 
         {/* Quick Actions Chips */}
@@ -484,49 +501,47 @@ export const App: React.FC = () => {
         {/* Audio Waveform */}
         <AudioWaveform state={state} isPushToTalkActive={isPushToTalkActive} />
 
-        {/* Bottom Hybrid Voice + Chat Bar */}
-        <div className="p-4 bg-slate-950/90 border-t border-slate-800 shrink-0">
-          <div className="max-w-4xl mx-auto flex items-center gap-3">
+        {/* Bottom Floating Glassmorphic Console */}
+        <div className="p-3 sm:p-4 shrink-0 pointer-events-none">
+          <div className="max-w-4xl mx-auto flex items-center gap-2.5 p-2 rounded-3xl bg-slate-900/85 border border-slate-700/80 shadow-2xl shadow-cyan-950/40 backdrop-blur-2xl pointer-events-auto">
             {/* Push-to-Talk Button */}
             <button
               onMouseDown={handleStartPushToTalk}
               onMouseUp={handleStopPushToTalk}
               onTouchStart={handleStartPushToTalk}
               onTouchEnd={handleStopPushToTalk}
-              className={`flex items-center gap-2 px-5 py-3.5 rounded-2xl font-bold text-xs tracking-wider uppercase transition-all shadow-lg select-none shrink-0 ${
+              className={`flex items-center gap-2 px-4 sm:px-5 py-3 rounded-2xl font-bold text-xs tracking-wider uppercase transition-all duration-300 shadow-lg select-none shrink-0 ${
                 isPushToTalkActive
                   ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/80 scale-95 border-2 border-white animate-pulse'
-                  : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400/40 shadow-cyan-950/50 active:scale-95'
+                  : 'bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white border border-cyan-400/40 shadow-cyan-950/50 active:scale-95'
               }`}
               title="Hold to Speak (or hold Spacebar)"
             >
               <Mic className="w-4 h-4" />
-              <span>{isPushToTalkActive ? 'Release to Send' : 'Push to Talk'}</span>
+              <span className="hidden sm:inline">{isPushToTalkActive ? 'Release to Send' : 'Push to Talk'}</span>
             </button>
 
             {/* Chat Input Field */}
-            <form onSubmit={handleSendMessage} className="flex-1 flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="Ask AEGIS anything or give a command (e.g. 'What do you see in the room?', 'Where is my phone?', 'Remind me tomorrow at 5 PM')..."
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  className="flex-1 px-4 py-3 text-sm rounded-2xl bg-slate-900/90 border border-slate-700/80 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-500/30 shadow-inner"
-                />
-                <button
-                  type="submit"
-                  disabled={!inputText.trim()}
-                  className="p-3 rounded-2xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white disabled:opacity-40 disabled:hover:from-cyan-600 disabled:hover:to-indigo-600 transition shadow-md active:scale-95 shrink-0"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex items-center justify-between px-2 text-[10px] font-mono text-slate-500">
-                <span>Hold Spacebar for Voice Core</span>
-                <span>Press Enter to send</span>
-              </div>
+            <form onSubmit={handleSendMessage} className="flex-1 flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Ask AEGIS anything or give a command (e.g. 'What do you see?', 'Where is my phone?')..."
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                className="flex-1 px-4 py-2.5 text-xs sm:text-sm rounded-2xl bg-slate-950/70 border border-slate-700/60 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30 transition shadow-inner"
+              />
+              <button
+                type="submit"
+                disabled={!inputText.trim()}
+                className="p-3 rounded-2xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white disabled:opacity-30 disabled:hover:from-cyan-600 disabled:hover:to-indigo-600 transition-all duration-200 shadow-md active:scale-95 shrink-0"
+              >
+                <Send className="w-4 h-4" />
+              </button>
             </form>
+          </div>
+          <div className="max-w-4xl mx-auto flex items-center justify-between px-6 pt-1 text-[10px] font-mono text-slate-500">
+            <span>Hold Spacebar for Voice Core</span>
+            <span>Press Enter to send</span>
           </div>
         </div>
       </main>
