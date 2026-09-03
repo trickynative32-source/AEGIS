@@ -12,11 +12,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
+import datetime
+
 from backend.config import settings
 from backend.database import init_db, get_db, SessionLocal
 from backend.models import (
-    Reminder, Memory, Routine, VisualMemory, Conversation,
-    MessageCreate, ReminderCreate, MemoryItem
+    Reminder, Memory, Routine, VisualMemory, Conversation, UserProfile,
+    MessageCreate, ReminderCreate, MemoryItem, UserProfileCreate
 )
 from backend.tools.registry import registry
 import backend.tools  # Register all tools
@@ -323,6 +325,115 @@ async def transcribe_audio_file(file: UploadFile = File(...)):
 async def generate_tts(text: str = Form(...)):
     audio_b64 = await tts_service.generate_speech_audio_base64(text)
     return {"audio_base64": audio_b64}
+
+# User Profile & Authentication Endpoints
+@app.get("/api/user/profile")
+async def get_user_profile():
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).order_by(UserProfile.last_login.desc()).first()
+        if not profile:
+            return {
+                "user_id": "guest",
+                "name": "Guest Explorer",
+                "email": None,
+                "avatar_url": None,
+                "auth_provider": "guest",
+                "role": "Guest",
+                "personal_notes": None,
+                "preferences": {}
+            }
+        prefs = {}
+        if profile.preferences_json:
+            try:
+                prefs = json.loads(profile.preferences_json)
+            except Exception:
+                pass
+        return {
+            "user_id": profile.user_id,
+            "name": profile.name,
+            "email": profile.email,
+            "avatar_url": profile.avatar_url,
+            "auth_provider": profile.auth_provider,
+            "role": profile.role,
+            "personal_notes": profile.personal_notes,
+            "preferences": prefs,
+            "last_login": profile.last_login.isoformat() if profile.last_login else None
+        }
+    finally:
+        db.close()
+
+@app.post("/api/user/login")
+async def login_user(payload: UserProfileCreate):
+    db = SessionLocal()
+    try:
+        user_id = payload.user_id or f"usr_{payload.name.lower().replace(' ', '_')}"
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        if not profile:
+            profile = UserProfile(
+                user_id=user_id,
+                name=payload.name,
+                email=payload.email,
+                avatar_url=payload.avatar_url,
+                auth_provider=payload.auth_provider,
+                role=payload.role or "User",
+                personal_notes=payload.personal_notes,
+                preferences_json=json.dumps(payload.preferences or {})
+            )
+            db.add(profile)
+        else:
+            profile.name = payload.name
+            if payload.email:
+                profile.email = payload.email
+            if payload.avatar_url:
+                profile.avatar_url = payload.avatar_url
+            if payload.role:
+                profile.role = payload.role
+            if payload.personal_notes:
+                profile.personal_notes = payload.personal_notes
+            if payload.preferences:
+                profile.preferences_json = json.dumps(payload.preferences)
+            profile.last_login = datetime.datetime.utcnow()
+
+        db.commit()
+        db.refresh(profile)
+
+        # Sync profile directly into AEGIS memory so the assistant remembers the user!
+        memory_store.set_memory("user_name", profile.name, category="profile")
+        if profile.email:
+            memory_store.set_memory("user_email", profile.email, category="profile")
+        if profile.role:
+            memory_store.set_memory("user_role", profile.role, category="profile")
+        if profile.personal_notes:
+            memory_store.set_memory("user_notes", profile.personal_notes, category="profile")
+
+        prefs = {}
+        if profile.preferences_json:
+            try:
+                prefs = json.loads(profile.preferences_json)
+            except Exception:
+                pass
+
+        return {
+            "status": "success",
+            "message": f"Welcome, {profile.name}!",
+            "profile": {
+                "user_id": profile.user_id,
+                "name": profile.name,
+                "email": profile.email,
+                "avatar_url": profile.avatar_url,
+                "auth_provider": profile.auth_provider,
+                "role": profile.role,
+                "personal_notes": profile.personal_notes,
+                "preferences": prefs
+            }
+        }
+    finally:
+        db.close()
+
+@app.post("/api/user/logout")
+async def logout_user():
+    return {"status": "success", "message": "Logged out."}
 
 # WebSocket Endpoint
 @app.websocket("/ws")

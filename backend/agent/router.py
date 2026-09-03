@@ -13,7 +13,7 @@ from backend.tools.math_tools import evaluate_math_expression
 logger = logging.getLogger("AEGIS.Router")
 
 class FastDeterministicRouter:
-    """Zero-latency local routing for deterministic tasks, system clock, camera, apps, maps, youtube, paint, reminders."""
+    """Zero-latency local routing for deterministic tasks, system clock, camera, apps, maps, youtube, reminders."""
 
     async def route_and_execute(self, user_input: str) -> Optional[Dict[str, Any]]:
         raw_text = user_input.strip()
@@ -89,7 +89,7 @@ class FastDeterministicRouter:
             re.search(r"\b(\d+\s+(?:plus|minus|times|multiplied by|divided by)\s+\d+)\b", t) or
             re.match(r"^[\d\s\+\-\*\/\(\)\.\^\%]+$", t)
         )
-        if is_math_candidate and not any(w in t for w in ["time", "date", "reminder", "remind", "camera", "paint", "youtube", "directions", "map", "pm", "am"]):
+        if is_math_candidate and not any(w in t for w in ["time", "date", "reminder", "remind", "camera", "youtube", "directions", "map", "pm", "am"]):
             math_res = evaluate_math_expression(raw_text)
             if math_res.get("success") or "Division by zero" in math_res.get("message", ""):
                 return {
@@ -174,33 +174,7 @@ class FastDeterministicRouter:
             res = await screen_vision_service.analyze_screen_content(t)
             return {"handled": True, "response": res.get("message", "Screen analyzed."), "tool": "analyze_screen", "verified": True}
 
-        # 8. Microsoft Paint & Drawing Automation
-        draw_match = re.search(r"\b(?:open paint and )?draw (?:a |an )?([a-zA-Z_\s]+?)(?: in paint| on the canvas)?$", t)
-        if draw_match or "draw a house" in t or "draw a circle" in t or "draw a landscape" in t or "draw a birthday card" in t or "write aura" in t:
-            drawing_type = "house"
-            if "house" in t:
-                drawing_type = "house"
-            elif "circle" in t or "sun" in t:
-                drawing_type = "circle"
-            elif "landscape" in t:
-                drawing_type = "landscape"
-            elif "birthday" in t or "card" in t:
-                drawing_type = "birthday_card"
-            elif "aura" in t:
-                drawing_type = "aura_text"
-            elif "geometric" in t or "star" in t:
-                drawing_type = "geometric"
-            elif draw_match:
-                candidate = draw_match.group(1).strip().lower()
-                if candidate in ["house", "circle", "landscape", "birthday_card", "aura_text", "geometric"]:
-                    drawing_type = candidate
-
-            tool_res = await registry.execute("draw_in_paint", {"drawing_type": drawing_type})
-            msg = f"Done. Paint is open and I drew a {drawing_type} on the canvas."
-            routine_learner.log_action("app_launch", "Paint")
-            return {"handled": True, "response": msg, "tool": "draw_in_paint", "verified": True}
-
-        # 9. YouTube Playback & Music
+        # 8. YouTube Playback & Music
         yt_play_match = re.search(r"\b(?:play)\s+(.+?)(?:\s+on youtube)?$", raw_text, re.IGNORECASE)
         if yt_play_match and not any(w in t for w in ["game", "video game", "audio file"]):
             song = yt_play_match.group(1).strip()
@@ -309,7 +283,7 @@ class FastDeterministicRouter:
             return {"handled": True, "response": msg, "tool": "close_application", "verified": tool_res.get("verified", False)}
 
         # 13. General Fact / Entity Questions (e.g. "Who is Albert Einstein?")
-        if re.search(r"^(who is|who was|tell me about|explain|what is the capital of)\s+", t) and not any(w in t for w in ["my screen", "camera", "paint", "clock", "laptop", "bag", "room"]):
+        if re.search(r"^(who is|who was|tell me about|explain|what is the capital of)\s+", t) and not any(w in t for w in ["my screen", "camera", "clock", "laptop", "bag", "room"]):
             search_res = search_web_summary(raw_text)
             if search_res.get("success"):
                 return {

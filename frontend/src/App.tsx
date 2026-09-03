@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Mic, Send, Camera, Bell, Workflow, Settings as SettingsIcon,
-  Layers, Volume2, Sparkles, AlertCircle, ShieldAlert, Cpu
+  Layers, Volume2, Sparkles, AlertCircle, ShieldAlert, Cpu, User, LogIn
 } from 'lucide-react';
 import { wsService } from './services/websocket';
 import { ChatMessage, AssistantState } from './types';
@@ -15,6 +15,9 @@ import { RoutinesDrawer } from './components/RoutinesDrawer';
 import { VisualMemoryDrawer } from './components/VisualMemoryDrawer';
 import { SettingsModal } from './components/SettingsModal';
 import { AccessibilityBar } from './components/AccessibilityBar';
+import { AuraCore } from './components/AuraCore';
+import { IntroModal } from './components/IntroModal';
+import { AuthModal, UserProfileData } from './components/AuthModal';
 
 export const App: React.FC = () => {
   // Assistant States
@@ -23,6 +26,18 @@ export const App: React.FC = () => {
   const [inputText, setInputText] = useState<string>('');
   const [isPushToTalkActive, setIsPushToTalkActive] = useState<boolean>(false);
   const [speechPreview, setSpeechPreview] = useState<string>('');
+
+  // User Profile & Intro States
+  const [currentUser, setCurrentUser] = useState<UserProfileData>({
+    user_id: 'guest',
+    name: 'Guest Explorer',
+    auth_provider: 'guest',
+    role: 'Guest'
+  });
+  const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
+  const [isIntroOpen, setIsIntroOpen] = useState<boolean>(() => {
+    return localStorage.getItem('aegis_intro_dismissed') !== 'true';
+  });
 
   // Senses & Modals
   const [cameraActive, setCameraActive] = useState<boolean>(false);
@@ -66,6 +81,16 @@ export const App: React.FC = () => {
 
       recognitionRef.current = rec;
     }
+
+    // Fetch initial user profile & personal memory
+    fetch('/api/user/profile')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.name) {
+          setCurrentUser(data);
+        }
+      })
+      .catch((e) => console.debug('Profile fetch note:', e));
 
     // Connect WebSocket
     wsService.connect();
@@ -258,6 +283,29 @@ export const App: React.FC = () => {
 
         {/* Action Controls & Drawers */}
         <div className="flex items-center gap-2">
+          {/* User Profile / Auth Status Chip */}
+          <button
+            onClick={() => setIsAuthOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-cyan-500/50 text-slate-200 text-xs font-semibold transition shadow-sm"
+            title="User Profile & Personal Memory"
+          >
+            <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white text-[10px] font-bold shadow-sm">
+              {currentUser.name ? currentUser.name.charAt(0) : 'G'}
+            </div>
+            <span className="hidden sm:inline max-w-[110px] truncate text-slate-200 font-medium">
+              {currentUser.name}
+            </span>
+          </button>
+
+          {/* Intro Replay Button */}
+          <button
+            onClick={() => setIsIntroOpen(true)}
+            className="p-2 rounded-xl bg-slate-900/80 border border-slate-700 hover:border-cyan-500/40 text-slate-300 transition"
+            title="Replay AEGIS Intro"
+          >
+            <Sparkles className="w-4 h-4 text-cyan-400" />
+          </button>
+
           <button
             onClick={handleToggleCamera}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold tracking-wide transition shadow-sm ${
@@ -314,6 +362,28 @@ export const App: React.FC = () => {
 
       {/* Main Workspace */}
       <main className="flex-1 flex flex-col min-h-0 relative">
+        {/* Living Conversational Core ("AuraCore") */}
+        <AuraCore
+          state={state}
+          isPushToTalkActive={isPushToTalkActive}
+          onCoreClick={() => {
+            if (state === 'SPEAKING') {
+              wsService.bargeIn();
+            } else if (isPushToTalkActive) {
+              handleStopPushToTalk();
+            } else {
+              handleStartPushToTalk();
+            }
+          }}
+          latestAssistantUtterance={
+            messages
+              .slice()
+              .reverse()
+              .find((m) => m.role === 'assistant')?.content
+          }
+          onQuickAction={handleSelectQuickPrompt}
+        />
+
         {/* Quick Actions Chips */}
         {!simplifiedMode && <QuickActions onSelectAction={handleSelectQuickPrompt} />}
 
@@ -337,6 +407,36 @@ export const App: React.FC = () => {
         <RoutinesDrawer isOpen={isRoutinesOpen} onClose={() => setIsRoutinesOpen(false)} />
         <VisualMemoryDrawer isOpen={isVisualMemoryOpen} onClose={() => setIsVisualMemoryOpen(false)} />
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+
+        {/* Soft Intro Onboarding Modal */}
+        <IntroModal
+          isOpen={isIntroOpen}
+          onEnter={() => setIsIntroOpen(false)}
+          onOpenAuth={() => {
+            setIsIntroOpen(false);
+            setIsAuthOpen(true);
+          }}
+          userName={currentUser.name}
+        />
+
+        {/* User Profile & Authentication Modal */}
+        <AuthModal
+          isOpen={isAuthOpen}
+          onClose={() => setIsAuthOpen(false)}
+          currentUser={currentUser}
+          onLoginSuccess={(user) => {
+            setCurrentUser(user);
+          }}
+          onLogout={() => {
+            setCurrentUser({
+              user_id: 'guest',
+              name: 'Guest Explorer',
+              auth_provider: 'guest',
+              role: 'Guest'
+            });
+            fetch('/api/user/logout', { method: 'POST' }).catch(() => {});
+          }}
+        />
 
         {/* Speech Preview Strip */}
         {speechPreview && (
@@ -373,7 +473,7 @@ export const App: React.FC = () => {
             <form onSubmit={handleSendMessage} className="flex-1 flex items-center gap-2">
               <input
                 type="text"
-                placeholder="Type a message or command (e.g. 'Open Chrome', 'Draw house in Paint', 'Remind me tomorrow at 5 PM')..."
+                placeholder="Ask AEGIS anything or give a command (e.g. 'What do you see in the room?', 'Where is my phone?', 'Remind me tomorrow at 5 PM')..."
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 className="flex-1 px-4 py-3 text-sm rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-aura-cyan shadow-inner"

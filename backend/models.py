@@ -67,6 +67,21 @@ class UserSetting(Base):
     value = Column(Text, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(100), unique=True, index=True, nullable=False)
+    name = Column(String(100), nullable=False)
+    email = Column(String(150), nullable=True)
+    avatar_url = Column(String(255), nullable=True)
+    auth_provider = Column(String(50), default="google")
+    role = Column(String(100), nullable=True, default="User")
+    personal_notes = Column(Text, nullable=True)
+    preferences_json = Column(Text, nullable=True)
+    last_login = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
 # Pydantic Schemas
 class MessageCreate(BaseModel):
     text: str
@@ -98,3 +113,25 @@ class VisualMemoryItem(BaseModel):
     spatial_relationship: Optional[str] = None
     confidence: float = 0.9
     is_user_saved: bool = False
+
+class UserProfileCreate(BaseModel):
+    user_id: Optional[str] = None
+    name: str
+    email: Optional[str] = None
+    avatar_url: Optional[str] = None
+    auth_provider: str = "google"
+    role: Optional[str] = "User"
+    personal_notes: Optional[str] = None
+    preferences: Optional[Dict[str, Any]] = None
+
+class UserProfileResponse(BaseModel):
+    user_id: str
+    name: str
+    email: Optional[str] = None
+    avatar_url: Optional[str] = None
+    auth_provider: str = "google"
+    role: Optional[str] = "User"
+    personal_notes: Optional[str] = None
+    preferences: Optional[Dict[str, Any]] = None
+    last_login: Optional[datetime.datetime] = None
+

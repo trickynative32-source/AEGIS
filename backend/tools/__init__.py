@@ -4,7 +4,6 @@ import backend.tools.math_tools
 import backend.tools.app_launcher
 import backend.tools.browser_tools
 import backend.tools.file_tools
-import backend.tools.paint_tools
 import backend.tools.computer_tools
 import backend.tools.reminder_tools
 
