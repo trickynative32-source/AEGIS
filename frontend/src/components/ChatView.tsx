@@ -44,14 +44,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ messages, state, onBargeIn }
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 px-6">
-            <div className="w-16 h-16 rounded-2xl bg-cyan-950/50 border border-cyan-500/30 flex items-center justify-center mb-4 text-aura-cyan shadow-lg shadow-cyan-950/40">
-              <Bot className="w-8 h-8 animate-pulse" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-200 mb-1">AEGIS Ready</h3>
-            <p className="text-xs text-slate-400 max-w-sm">
-              Press and hold <span className="font-semibold text-aura-cyan">Push to Talk</span> or type below. Ask me to open applications, draw in Paint, play music, find objects, set reminders, or create files.
-            </p>
+          <div className="h-full flex flex-col items-center justify-center text-center text-slate-500 text-xs py-8">
+            <p>Start a conversation by typing below, tapping the Core, or holding <span className="text-cyan-400 font-semibold">Spacebar</span>.</p>
           </div>
         )}
 

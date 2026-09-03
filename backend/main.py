@@ -534,7 +534,26 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"WebSocket unhandled disconnect: {e}")
         manager.disconnect(websocket)
 
-# Serve built frontend
+# Serve built frontend with no-cache headers for index.html
+@app.get("/")
+async def serve_index():
+    index_file = Path(settings.BASE_DIR) / "frontend" / "dist" / "index.html"
+    if index_file.exists():
+        return FileResponse(
+            str(index_file),
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+    return JSONResponse({"status": "error", "message": "Frontend build not found"}, status_code=404)
+
+frontend_assets = Path(settings.BASE_DIR) / "frontend" / "dist" / "assets"
+if frontend_assets.exists():
+    app.mount("/assets", StaticFiles(directory=str(frontend_assets)), name="assets")
+
 frontend_dist = Path(settings.BASE_DIR) / "frontend" / "dist"
 if frontend_dist.exists():
     app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
