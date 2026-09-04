@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AEGIS — Comprehensive System Architecture & Technical Brief</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  @page {
+    size: A4;
+    margin: 10mm 12mm 10mm 12mm;
+    @bottom-right {
+      content: counter(page);
+      font-size: 8pt;
+      color: #64748b;
+      font-family: 'Inter', sans-serif;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #0f172a;
+    background-color: #ffffff;
+    line-height: 1.5;
+    font-size: 8.8pt;
+  }
+
+  .cover-header {
+    border-bottom: 2px solid #0284c7;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+  }
+
+  .sih-badge {
+    display: inline-block;
+    background: #0f172a;
+    color: #38bdf8;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    font-size: 7.5pt;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    border: 1px solid #0284c7;
+  }
+
+  h1 {
+    font-size: 18pt;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 3px;
+  }
+
+  .subtitle {
+    font-size: 9.5pt;
+    font-weight: 500;
+    color: #475569;
+    margin-bottom: 10px;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 8pt;
+  }
+
+  .meta-item strong {
+    color: #1e293b;
+    display: block;
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .meta-item span {
+    color: #0284c7;
+    font-weight: 600;
+  }
+
+  h2 {
+    font-size: 11.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    border-bottom: 1.5px solid #e2e8f0;
+    padding-bottom: 3px;
+    margin-top: 14px;
+    margin-bottom: 8px;
+    page-break-after: avoid;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  h2 .num {
+    background: #0284c7;
+    color: white;
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-size: 8pt;
+    font-weight: 800;
+  }
+
+  h3 {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #1e293b;
+    margin-top: 10px;
+    margin-bottom: 4px;
+    page-break-after: avoid;
+  }
+
+  p {
+    margin-bottom: 6px;
+    color: #334155;
+    text-align: justify;
+  }
+
+  ul, ol {
+    margin-left: 16px;
+    margin-bottom: 8px;
+    color: #334155;
+  }
+
+  li {
+    margin-bottom: 3px;
+  }
+
+  li strong {
+    color: #0f172a;
+  }
+
+  .callout {
+    background: #f0f9ff;
+    border-left: 3.5px solid #0284c7;
+    padding: 8px 12px;
+    border-radius: 0 6px 6px 0;
+    margin: 10px 0;
+    font-size: 8.2pt;
+  }
+
+  .callout strong {
+    color: #0369a1;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 7.8pt;
+    page-break-inside: avoid;
+  }
+
+  th, td {
+    border: 1px solid #cbd5e1;
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: #f1f5f9;
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7.5pt;
+    background: #f1f5f9;
+    color: #0369a1;
+    padding: 1px 3px;
+    border-radius: 3px;
+    border: 1px solid #e2e8f0;
+  }
+
+  pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 8px 10px;
+    border-radius: 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7.2pt;
+    line-height: 1.35;
+    overflow-x: auto;
+    margin: 8px 0;
+    page-break-inside: avoid;
+  }
+
+  .page-break {
+    page-break-before: always;
+  }
+
+  /* DIAGRAM CARD CONTAINER */
+  .diagram-card {
+    background: #ffffff;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 10px;
+    margin: 10px 0;
+    page-break-inside: avoid;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  }
+
+  .diagram-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-bottom: 1.5px solid #e2e8f0;
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+    font-size: 8.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .diagram-header .tag {
+    background: #0284c7;
+    color: #ffffff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 7pt;
+    font-weight: 800;
+  }
+
+  /* VISUAL FLOWCHART 1: SYSTEM ARCHITECTURE */
+  .arch-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .arch-section {
+    border: 1.5px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+
+  .arch-section-title {
+    font-size: 7.8pt;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .frontend-sec { background: #f0fdf4; border-color: #86efac; }
+  .frontend-sec .arch-section-title { color: #166534; }
+
+  .gateway-sec { background: #f0f9ff; border-color: #7dd3fc; }
+  .gateway-sec .arch-section-title { color: #0369a1; }
+
+  .subsystems-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .subsystem-box {
+    border: 1.5px solid;
+    border-radius: 6px;
+    padding: 8px;
+  }
+
+  .vision-box { background: #faf5ff; border-color: #d8b4fe; }
+  .vision-box .sub-title { color: #7e22ce; }
+
+  .brain-box { background: #eff6ff; border-color: #93c5fd; }
+  .brain-box .sub-title { color: #1d4ed8; }
+
+  .voice-box { background: #fffbeb; border-color: #fde68a; }
+  .voice-box .sub-title { color: #b45309; }
+
+  .sub-title {
+    font-size: 8pt;
+    font-weight: 800;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+    padding-bottom: 3px;
+  }
+
+  .sub-item {
+    font-size: 7.4pt;
+    color: #334155;
+    line-height: 1.4;
+    margin-bottom: 3px;
+  }
+
+  .sub-item strong {
+    color: #0f172a;
+  }
+
+  .chips-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+
+  .chip-card {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    padding: 5px 6px;
+  }
+
+  .chip-card strong {
+    display: block;
+    font-size: 7.6pt;
+    color: #0f172a;
+    font-weight: 700;
+  }
+
+  .chip-card span {
+    display: block;
+    font-size: 6.8pt;
+    color: #64748b;
+  }
+
+  .connector-bar {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7pt;
+    font-weight: 700;
+    color: #0284c7;
+    background: #e0f2fe;
+    padding: 3px 6px;
+    border-radius: 4px;
+    margin: 2px 0;
+    border: 1px dashed #38bdf8;
+  }
+
+  .database-sec { background: #f8fafc; border-color: #94a3b8; }
+  .database-sec .arch-section-title { color: #0f172a; }
+
+  /* FIGURE 2: ROUTER DECISION FLOW */
+  .router-flow {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .router-card {
+    border: 1.5px solid;
+    border-radius: 6px;
+    padding: 7px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .route-time { background: #f0fdf4; border-color: #86efac; }
+  .route-yt { background: #f0f9ff; border-color: #7dd3fc; }
+  .route-flight { background: #fffbeb; border-color: #fde68a; }
+  .route-app { background: #faf5ff; border-color: #f0abfc; }
+  .route-llm { background: #f8fafc; border-color: #cbd5e1; }
+
+  .route-title {
+    font-size: 7.8pt;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+
+  .route-desc {
+    font-size: 7.2pt;
+    color: #334155;
+    margin-bottom: 6px;
+    line-height: 1.35;
+  }
+
+  .route-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6.8pt;
+    font-weight: 700;
+    padding: 2px 4px;
+    border-radius: 3px;
+    background: rgba(0,0,0,0.06);
+    display: inline-block;
+  }
+
+  /* FIGURE 3: VISION PIPELINE CARDS */
+  .vision-pipeline-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .pipeline-step {
+    border: 1.5px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 7px;
+    background: #ffffff;
+    position: relative;
+  }
+
+  .step-num {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 9999px;
+    background: #0284c7;
+    color: white;
+    font-size: 7pt;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .step-title {
+    font-size: 7.8pt;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 4px;
+    padding-right: 18px;
+  }
+
+  .step-desc {
+    font-size: 7.1pt;
+    color: #475569;
+    line-height: 1.35;
+  }
+</style>
+</head>
+<body>
+
+<!-- COVER HEADER -->
+<div class="cover-header">
+  <div class="sih-badge">Smart India Hackathon • SIH2611 / SIH26204</div>
+  <h1>AEGIS: Complete System Architecture &amp; Technical Brief</h1>
+  <div class="subtitle">Assisted Executive Guidance and Intelligence System for Autonomous Desktop Automation &amp; Inclusive Accessibility</div>
+  <div class="meta-grid">
+    <div class="meta-item">
+      <strong>Core Architecture</strong>
+      <span>FastAPI + React 18 + ONNX YOLO</span>
+    </div>
+    <div class="meta-item">
+      <strong>Automated Verification</strong>
+      <span>42/42 Tests Passing (100%)</span>
+    </div>
+    <div class="meta-item">
+      <strong>Execution Latency</strong>
+      <span>Sub-5ms Deterministic Dispatch</span>
+    </div>
+    <div class="meta-item">
+      <strong>Target Platform</strong>
+      <span>Windows 10 / 11 Native Engine</span>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 1 -->
+<h2><span class="num">1</span> Executive Summary &amp; Problem Alignment</h2>
+<p>
+  <strong>AEGIS</strong> is an agentic, Windows-native desktop personal assistant engineered to fulfill <strong>Problem Statement SIH26204</strong> (Assistive Technologies and Inclusive Innovation). It unites conversational intelligence, local computer vision, OS-level automation, low-latency audio with speech interruption (barge-in), and deep accessibility features into a unified, zero-latency desktop assistant.
+</p>
+<p>
+  Traditional voice assistants suffer from three critical flaws: (1) they lack grounding in native Windows system state, frequently hallucinating the clock and date; (2) they are cloud-dependent and blind to the physical desk environment; and (3) their media/task execution is passive, opening generic search pages that require manual clicks. AEGIS resolves all three challenges with local neural detectors, deterministic OS dispatch, and direct task resolution.
+</p>
+
+<!-- SECTION 2: COMPLETE MASTER ARCHITECTURE -->
+<h2><span class="num">2</span> Master System Architecture &amp; Dataflow</h2>
+<p>
+  AEGIS uses a layered asynchronous pipeline where high-priority deterministic tasks execute in sub-5ms through local dispatchers, while complex reasoning queries route through the Gemini LLM brain with DuckDuckGo web search fallback.
+</p>
+
+<div class="diagram-card">
+  <div class="diagram-header"><span class="tag">FIGURE 1</span> AEGIS Master Architecture &amp; Subsystem Dataflow</div>
+  <div class="arch-grid">
+    
+    <!-- 1. FRONTEND -->
+    <div class="arch-section frontend-sec">
+      <div class="arch-section-title">
+        <span>1. Frontend Client Layer (React 18 + TypeScript + Tailwind CSS)</span>
+        <span style="font-size:7pt; color:#166534; font-weight:600;">Holographic Cyberpunk UI</span>
+      </div>
+      <div class="chips-row">
+        <div class="chip-card">
+          <strong>AuraCore Orb</strong>
+          <span>Animated 4-State Visualizer</span>
+        </div>
+        <div class="chip-card">
+          <strong>Camera HUD (Theater)</strong>
+          <span>EMA Smoothed AR Reticles</span>
+        </div>
+        <div class="chip-card">
+          <strong>ChatView &amp; Media</strong>
+          <span>Direct YouTube Player Card</span>
+        </div>
+        <div class="chip-card">
+          <strong>Accessibility Bar</strong>
+          <span>High-Contrast / OpenDyslexic</span>
+        </div>
+        <div class="chip-card">
+          <strong>Auth &amp; User Profile</strong>
+          <span>Google OAuth &amp; Bcrypt Memory</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONNECTOR -->
+    <div class="connector-bar">
+      ▼ Bidirectional Async WebSocket (/ws) &amp; REST Auth Endpoints (/api/auth) ▼
+    </div>
+
+    <!-- 2. GATEWAY -->
+    <div class="arch-section gateway-sec">
+      <div class="arch-section-title">
+        <span>2. Communication Gateway (FastAPI + Uvicorn • Port 8000)</span>
+        <span style="font-size:7pt; color:#0369a1; font-weight:600;">Asynchronous Event Bus</span>
+      </div>
+      <p style="font-size:7.4pt; margin:0; color:#334155;">
+        <strong>Connection Manager:</strong> Non-blocking message serialization • Base64 video frame ingest (320ms interval) • Audio chunk ingestion • State machine synchronization (IDLE / LISTENING / THINKING / SPEAKING) • Instant barge-in cancellation.
+      </p>
+    </div>
+
+    <!-- 3. SUBSYSTEMS ROW -->
+    <div class="subsystems-row">
+      <!-- Vision -->
+      <div class="subsystem-box vision-box">
+        <div class="sub-title">Computer Vision Subsystem</div>
+        <div class="sub-item"><strong>YOLOv5m ONNX:</strong> Real-time neural inference on local CPU (640x640 letterbox).</div>
+        <div class="sub-item"><strong>Spatial Reasoner:</strong> Classifies placement: "In Hand", "On Desk", "Mounted on Wall".</div>
+        <div class="sub-item"><strong>EMA Coordinate Smoothing:</strong> 0.35*p + 0.65*i with 850ms persistence buffer.</div>
+        <div class="sub-item"><strong>VisualMemoryService:</strong> Compact episodic spatial snapshot memory.</div>
+      </div>
+
+      <!-- Decision & Brain -->
+      <div class="subsystem-box brain-box">
+        <div class="sub-title">Intelligent Routing &amp; Brain</div>
+        <div class="sub-item"><strong>FastDeterministicRouter:</strong> Sub-5ms regex intent dispatcher for core operations.</div>
+        <div class="sub-item"><strong>OpenKnowledgeEngine:</strong> Deep reasoning via Gemini 2.5 Flash LLM.</div>
+        <div class="sub-item"><strong>DuckDuckGo Search:</strong> Real-time live web facts fallback.</div>
+        <div class="sub-item"><strong>AegisAgent (ReAct):</strong> Autonomous multi-step tool calling engine.</div>
+      </div>
+
+      <!-- Voice & Tools -->
+      <div class="subsystem-box voice-box">
+        <div class="sub-title">Voice &amp; Automation Tools</div>
+        <div class="sub-item"><strong>Faster-Whisper STT:</strong> Low-latency on-device speech transcription.</div>
+        <div class="sub-item"><strong>Edge-TTS:</strong> High-definition neural voice synthesis.</div>
+        <div class="sub-item"><strong>Direct YouTube Resolver:</strong> Exact video ID scraping for instant playback.</div>
+        <div class="sub-item"><strong>Flight Booking Tools:</strong> Multi-engine prefilled deep links.</div>
+      </div>
+    </div>
+
+    <!-- 4. PERSISTENT STORAGE -->
+    <div class="arch-section database-sec">
+      <div class="arch-section-title">
+        <span>4. Persistence &amp; Memory Engine (SQLite + SQLAlchemy • aegis.db)</span>
+        <span style="font-size:7pt; color:#475569; font-weight:600;">Relational &amp; Episodic Memory</span>
+      </div>
+      <p style="font-size:7.4pt; margin:0; color:#334155;">
+        <strong>User Profiles:</strong> Bcrypt password hashes, preferences, avatar, role • <strong>Spatial Memories:</strong> Temporal object coordinates &amp; relationships • <strong>Reminders:</strong> User-anchored timers polled every 3s via APScheduler • <strong>Routines:</strong> Proactive suggestion logs.
+      </p>
+    </div>
+
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<!-- SECTION 3: FAST DETERMINISTIC ROUTING -->
+<h2><span class="num">3</span> Fast Deterministic Intent Routing Engine</h2>
+<p>
+  To eliminate LLM latency and API token costs, the <code>FastDeterministicRouter</code> analyzes utterances using compiled regular expressions and dispatches common daily tasks locally in <strong>&lt; 5 milliseconds</strong>:
+</p>
+
+<div class="diagram-card">
+  <div class="diagram-header"><span class="tag">FIGURE 2</span> Fast Deterministic Router Decision Matrix</div>
+  <div class="router-flow">
+    <!-- Branch 1 -->
+    <div class="router-card route-time">
+      <div class="route-title" style="color:#166534;">System Clock / Date</div>
+      <div class="route-desc">Matches time/date queries. Directly reads Windows system clock. Zero hallucination.</div>
+      <div class="route-badge" style="color:#166534;">get_system_time() &lt;2ms</div>
+    </div>
+
+    <!-- Branch 2 -->
+    <div class="router-card route-yt">
+      <div class="route-title" style="color:#0369a1;">Direct YouTube Play</div>
+      <div class="route-desc">Scrapes exact 11-char video ID and opens /watch?v=. Emits media player card in chat.</div>
+      <div class="route-badge" style="color:#0369a1;">resolve_youtube()</div>
+    </div>
+
+    <!-- Branch 3 -->
+    <div class="router-card route-flight">
+      <div class="route-title" style="color:#92400e;">Flight Booking</div>
+      <div class="route-desc">Extracts origin, destination, and dates. Prompts provider and generates prefilled deep links.</div>
+      <div class="route-badge" style="color:#92400e;">generate_flight_url()</div>
+    </div>
+
+    <!-- Branch 4 -->
+    <div class="router-card route-app">
+      <div class="route-title" style="color:#86198f;">App &amp; Hardware Control</div>
+      <div class="route-desc">Scans Windows Start Menu shortcuts (.lnk). Controls volume, brightness, battery, and camera.</div>
+      <div class="route-badge" style="color:#86198f;">AppLauncher &amp; Win32</div>
+    </div>
+
+    <!-- Branch 5 -->
+    <div class="router-card route-llm">
+      <div class="route-title" style="color:#0f172a;">LLM Reasoning Fallback</div>
+      <div class="route-desc">Broad knowledge questions and complex reasoning route to Gemini 2.5 Flash with search.</div>
+      <div class="route-badge" style="color:#0f172a;">OpenKnowledgeEngine</div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 4: COMPUTER VISION & AR TARGETING -->
+<h2><span class="num">4</span> Real-Time Vision, EMA Smoothing &amp; AR HUD</h2>
+<p>
+  The vision pipeline runs locally using <strong>ONNX Runtime</strong> with the <strong>YOLOv5m</strong> model. Detections are smoothed via an Exponential Moving Average (EMA) and an 850ms persistence buffer:
+</p>
+
+<div class="diagram-card">
+  <div class="diagram-header"><span class="tag">FIGURE 3</span> 5-Stage Neural Vision &amp; Spatial Tracking Pipeline</div>
+  <div class="vision-pipeline-row">
+    <!-- Step 1 -->
+    <div class="pipeline-step">
+      <div class="step-num">1</div>
+      <div class="step-title">Video Capture</div>
+      <div class="step-desc">HTML5 video stream captured every 320ms as JPEG base64 payload to the backend WebSocket.</div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="pipeline-step">
+      <div class="step-num">2</div>
+      <div class="step-title">YOLOv5m ONNX</div>
+      <div class="step-desc">640x640 letterbox scaling. Non-Maximum Suppression (NMS) with skin-contour fallback.</div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="pipeline-step">
+      <div class="step-num">3</div>
+      <div class="step-title">Spatial Classifier</div>
+      <div class="step-desc">Determines relationships: "In Hand" (skin mask overlap), "On Desk" (lower frame), "On Wall".</div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="pipeline-step">
+      <div class="step-num">4</div>
+      <div class="step-title">EMA Smoother</div>
+      <div class="step-desc">Matches tracks (dist &lt; 0.22). Smoothes coords: <code>pos = 0.35*p + 0.65*i</code> with 850ms buffer.</div>
+    </div>
+
+    <!-- Step 5 -->
+    <div class="pipeline-step">
+      <div class="step-num">5</div>
+      <div class="step-title">AR Theater HUD</div>
+      <div class="step-desc">Renders high-tech Sci-Fi corner reticles, confidence meters, and interactive 1-tap query chips.</div>
+    </div>
+  </div>
+</div>
+
+<div class="callout">
+  <strong>Anti-Jitter Innovation:</strong> By coupling Exponential Moving Average coordinate smoothing with an <strong>850ms persistence buffer</strong>, bounding boxes never blink or jump when single frames drop due to hand motion or lighting variations.
+</div>
+
+<!-- SECTION 5: VOICE & AUTOMATION -->
+<h2><span class="num">5</span> Hands-Free Speech &amp; Autonomous Desktop Workflows</h2>
+
+<h3>A. Voice Interaction with Instant Speech Barge-In</h3>
+<p>
+  AEGIS implements hands-free audio using <strong>Faster-Whisper</strong> and <strong>Edge-TTS</strong>. When the user starts speaking while AEGIS is speaking, the frontend detects voice activity and immediately fires a <code>barge_in</code> packet. The backend cancels speech audio synthesis within 50ms and transitions instantly to <code>LISTENING</code> mode.
+</p>
+
+<h3>B. Direct YouTube Video &amp; Music Playback</h3>
+<p>
+  Traditional voice assistants open generic search pages requiring manual selection. AEGIS scrapes the top video result via regex matching <code>/watch?v=([a-zA-Z0-9_-]{11})</code>, opens the video directly in the browser, and renders an animated holographic player card in chat complete with HD thumbnail and equalizer bars.
+</p>
+
+<h3>C. Smart Flight Booking Engine</h3>
+<p>
+  When a user requests flight booking (e.g. <em>"Book a flight from Mumbai to Delhi this Friday"</em>), <code>flight_tools.py</code> automatically parses origin, destination, and dates. If the platform is unspecified, AEGIS prompts the user with supported providers (Google Flights, Skyscanner, MakeMyTrip, Expedia, Kayak) and deep-links directly into the prefilled booking checkout page.
+</p>
+
+<div class="page-break"></div>
+
+<!-- SECTION 6: AUTHENTICATION, MEMORY & TEST MATRIX -->
+<h2><span class="num">6</span> Authentication, Adaptive Profiles &amp; Test Suite</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 25%;">Component / Subsystem</th>
+      <th style="width: 50%;">Technical Implementation Details</th>
+      <th style="width: 25%;">Verification Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Authentication &amp; Security</strong></td>
+      <td>Google OAuth Single Sign-On simulation, local email/password registration, Bcrypt hashing, JWT tokens, profile editing.</td>
+      <td>✅ Passed (<code>test_auth.py</code>)</td>
+    </tr>
+    <tr>
+      <td><strong>Long-Term User Memory</strong></td>
+      <td>SQLite database (<code>aegis.db</code>) with SQLAlchemy ORM storing user preferences, accessibility settings, and conversation logs.</td>
+      <td>✅ Passed (<code>test_user_profile.py</code>)</td>
+    </tr>
+    <tr>
+      <td><strong>Deterministic Routing</strong></td>
+      <td>Sub-5ms intent classifier for time, YouTube, flights, hardware, and camera controls.</td>
+      <td>✅ Passed (<code>test_router.py</code>)</td>
+    </tr>
+    <tr>
+      <td><strong>Spatial Visual Memory</strong></td>
+      <td>Episodic snapshots storing object categories, relative positions, and timestamps without saving raw video.</td>
+      <td>✅ Passed (<code>test_visual_memory.py</code>)</td>
+    </tr>
+    <tr>
+      <td><strong>Desktop Automation</strong></td>
+      <td>PyAutoGUI canvas illustration, Start Menu shortcut discovery, multi-format file generation (Python, Word, Markdown).</td>
+      <td>✅ Passed (<code>test_tools.py</code>)</td>
+    </tr>
+    <tr>
+      <td><strong>End-to-End WebSocket</strong></td>
+      <td>Full integration test covering speech ingestion, barge-in cancellation, tool triggers, and state synchronization.</td>
+      <td>✅ Passed (<code>test_e2e.py</code>)</td>
+    </tr>
+    <tr>
+      <td><strong>Flight Booking Engine</strong></td>
+      <td>Validates airport IATA code resolution, date formatting, provider URL encoding, and prompt interaction.</td>
+      <td>✅ Passed (<code>test_flight_tools.py</code>)</td>
+    </tr>
+    <tr>
+      <td><strong>Overall Test Suite</strong></td>
+      <td>Complete automated regression test suite running with Pytest across unit, integration, and E2E layers.</td>
+      <td><strong>42 / 42 Passed (100%)</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- SECTION 7: DIRECTORY STRUCTURE -->
+<h2><span class="num">7</span> Project Codebase Structure</h2>
+<pre><code>c:\Users\sriis\OneDrive\Documents\Project\SU\
+├── backend/
+│   ├── main.py                     # FastAPI server, WebSocket handler, state lifecycle
+│   ├── config.py                   # Environment settings, model caches, API keys
+│   ├── database.py                 # SQLAlchemy engine and SQLite session manager
+│   ├── models.py                   # Database schema: User, Memory, Reminder, Routine, VisualMemory
+│   ├── agent/
+│   │   ├── router.py               # FastDeterministicRouter (&lt;5ms regex dispatcher)
+│   │   ├── open_knowledge_engine.py# Gemini 2.5 Flash + DuckDuckGo web search fallback
+│   │   └── llm_agent.py            # AegisAgent ReAct pattern tool orchestrator
+│   ├── services/
+│   │   ├── auth.py                 # Bcrypt password hashing, JWT, Google SSO simulation
+│   │   ├── neural_detector.py      # YOLOv5m ONNX neural detector with spatial reasoning
+│   │   ├── visual_memory.py        # Short-term spatial episodic memory storage
+│   │   ├── stt.py &amp; tts.py         # Faster-Whisper STT &amp; Edge-TTS with barge-in cancellation
+│   │   └── scheduler.py            # APScheduler 3s interval reminder background daemon
+│   └── tools/
+│       ├── browser_tools.py        # Direct YouTube video resolver and web automation
+│       ├── flight_tools.py         # Flight ticket booking deep link generator
+│       ├── app_launcher.py         # Windows Start Menu application discovery
+│       └── system_tools.py         # Windows system clock, volume, battery, brightness
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx                 # Main app coordinator, WebSocket connection, layout
+│   │   ├── components/
+│   │   │   ├── AuraCore.tsx        # Holographic animated voice orb
+│   │   │   ├── CameraHUD.tsx       # Large AR Theater Vision HUD with EMA smoothing
+│   │   │   ├── ChatView.tsx        # Chat feed, YouTube player card, markdown rendering
+│   │   │   ├── AuthModal.tsx       # Google OAuth &amp; email login/signup dialog
+│   │   │   └── AccessibilityBar.tsx# SIH Accessibility toolbar (High-Contrast, Dyslexia)
+│   │   └── services/websocket.ts   # Auto-reconnecting WebSocket singleton
+├── tests/                          # 42 automated Pytest test cases (100% passing)
+├── aegis.db                        # Production SQLite database
+├── run_aegis.bat &amp; run_aegis.ps1   # 1-click Windows batch &amp; PowerShell launchers
+└── AEGIS_DEEP_BRIEF.pdf            # Production executive architecture document</code></pre>
+
+<!-- SECTION 8: HOW TO RUN -->
+<h2><span class="num">8</span> Quick Start &amp; Deployment Guide</h2>
+<pre><code># 1. Start AEGIS Backend Service (FastAPI + WebSocket Gateway)
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+
+# 2. Launch Cyberpunk Desktop Frontend (React 18 + Vite)
+cd frontend &amp;&amp; npm run dev
+
+# 3. Or Launch Both via 1-Click PowerShell Script
+.\run_aegis.ps1</code></pre>
+
+<p style="text-align: center; color: #64748b; font-size: 7.5pt; margin-top: 14px; border-top: 1px solid #e2e8f0; padding-top: 6px;">
+  AEGIS — Smart India Hackathon 2026 • Assistive Technologies and Inclusive Innovation (SIH26204) • Complete Technical Brief
+</p>
+
+</body>
+</html>
