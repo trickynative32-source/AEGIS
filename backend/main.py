@@ -138,6 +138,7 @@ async def process_user_query(user_text: str, is_voice: bool = False) -> Dict[str
     
     url = None
     booking_data = None
+    media_data = None
 
     if fast_result:
         if "pending_reminder_task" in fast_result:
@@ -149,6 +150,7 @@ async def process_user_query(user_text: str, is_voice: bool = False) -> Dict[str
         action = fast_result.get("action")
         url = fast_result.get("url")
         booking_data = fast_result.get("booking_data")
+        media_data = fast_result.get("media_data")
     else:
         # 2. General Agent & Reasoning loop
         await manager.broadcast_json({"type": "state_change", "state": "EXECUTING", "query": clean_text})
@@ -159,6 +161,7 @@ async def process_user_query(user_text: str, is_voice: bool = False) -> Dict[str
         action = agent_result.get("action")
         url = agent_result.get("url")
         booking_data = agent_result.get("booking_data")
+        media_data = agent_result.get("media_data")
 
     # Broadcast state: SPEAKING
     await manager.broadcast_json({"type": "state_change", "state": "SPEAKING", "response": response_text})
@@ -181,6 +184,7 @@ async def process_user_query(user_text: str, is_voice: bool = False) -> Dict[str
         "action": action,
         "url": url,
         "booking_data": booking_data,
+        "media_data": media_data,
         "audio_base64": audio_base64,
         "timestamp": asyncio.get_event_loop().time()
     }

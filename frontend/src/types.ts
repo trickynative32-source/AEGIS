@@ -20,6 +20,15 @@ export interface FlightBookingData {
   awaiting_destination?: boolean;
 }
 
+export interface MediaData {
+  type: 'youtube';
+  title: string;
+  video_id?: string;
+  url: string;
+  embed_url?: string;
+  thumbnail?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -29,6 +38,7 @@ export interface ChatMessage {
   action?: string;
   url?: string;
   booking_data?: FlightBookingData;
+  media_data?: MediaData;
   timestamp: string;
   isVoice?: boolean;
 }

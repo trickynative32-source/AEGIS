@@ -1,6 +1,8 @@
 import urllib.parse
 import webbrowser
 import logging
+import re
+import requests
 from typing import Dict, Any, Optional
 from backend.tools.registry import registry
 from backend.services.location import get_current_location_summary
@@ -100,13 +102,13 @@ def youtube_search(query: str) -> Dict[str, Any]:
 
 @registry.register(
     name="youtube_play",
-    description="Play a specific song, track, or artist on YouTube.",
+    description="Directly play a specific song, video, track, or artist on YouTube.",
     parameters={
         "type": "object",
         "properties": {
             "song": {
                 "type": "string",
-                "description": "Name of the song or artist to play (e.g. 'Believer by Imagine Dragons', 'Tum Hi Ho', 'Relaxing music')"
+                "description": "Name of the song, video, or artist to play (e.g. 'Believer Imagine Dragons', 'Tum Hi Ho', 'Lofi hip hop')"
             }
         },
         "required": ["song"]
@@ -115,18 +117,55 @@ def youtube_search(query: str) -> Dict[str, Any]:
     category="browser"
 )
 def youtube_play(song: str) -> Dict[str, Any]:
-    # Construct clean YouTube search query
     clean_song = song.strip()
     encoded = urllib.parse.quote_plus(clean_song)
-    # Direct YouTube search URL
-    yt_url = f"https://www.youtube.com/results?search_query={encoded}"
-    webbrowser.open(yt_url)
+    search_url = f"https://www.youtube.com/results?search_query={encoded}"
+    direct_url = search_url
+    video_id = None
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        resp = requests.get(search_url, headers=headers, timeout=4.0)
+        if resp.status_code == 200:
+            ids = re.findall(r'watch\?v=([a-zA-Z0-9_-]{11})', resp.text)
+            unique_ids = []
+            for vid in ids:
+                if vid not in unique_ids:
+                    unique_ids.append(vid)
+            if unique_ids:
+                video_id = unique_ids[0]
+                direct_url = f"https://www.youtube.com/watch?v={video_id}"
+    except Exception as e:
+        logger.warning(f"Direct YouTube video ID extraction fallback: {e}")
+
+    try:
+        webbrowser.open(direct_url)
+        opened = True
+    except Exception as e:
+        logger.error(f"Failed to open browser for YouTube: {e}")
+        opened = False
+
+    media_data = {
+        "type": "youtube",
+        "title": clean_song,
+        "video_id": video_id,
+        "url": direct_url,
+        "embed_url": f"https://www.youtube.com/embed/{video_id}?autoplay=1" if video_id else None,
+        "thumbnail": f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg" if video_id else None
+    }
+
     return {
         "status": "playing",
+        "action": "open_url",
         "song": clean_song,
-        "url": yt_url,
-        "message": f"Playing {clean_song} on YouTube.",
-        "verified": True
+        "video_id": video_id,
+        "url": direct_url,
+        "media_data": media_data,
+        "message": f"Now playing {clean_song} directly on YouTube.",
+        "verified": True,
+        "opened_in_browser": opened
     }
 
 @registry.register(

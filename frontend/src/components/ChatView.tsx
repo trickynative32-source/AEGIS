@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { 
   Bot, User, CheckCircle2, AlertCircle, Wrench, Volume2, Square, 
   Copy, Check, Sparkles, Terminal, ArrowRight, ShieldCheck, Zap,
-  Plane, ExternalLink, Calendar
+  Plane, ExternalLink, Calendar, Play, Music
 } from 'lucide-react';
 import { ChatMessage, AssistantState } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -258,6 +258,68 @@ export const ChatView: React.FC<ChatViewProps> = ({
                           </div>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Holographic Direct YouTube Media Player Card */}
+                  {msg.media_data && (
+                    <div className="mt-3.5 p-3.5 rounded-2xl bg-gradient-to-br from-slate-950/90 via-slate-900/90 to-red-950/30 border border-red-500/40 shadow-xl shadow-red-950/30 space-y-3 animate-fade-in">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-red-600 flex items-center justify-center text-white shadow-md shadow-red-600/30 animate-pulse">
+                            <Play className="w-4 h-4 fill-white ml-0.5" />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-red-400 font-bold flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping inline-block" />
+                              Direct YouTube Playback &bull; Active
+                            </span>
+                            <h4 className="text-xs font-bold text-slate-100 line-clamp-1">
+                              {msg.media_data.title}
+                            </h4>
+                          </div>
+                        </div>
+
+                        {/* Equalizer animation */}
+                        <div className="flex items-end gap-0.5 h-4 px-2 py-1 bg-slate-900/80 border border-slate-700/60 rounded-lg">
+                          <div className="w-1 bg-red-400 rounded-full animate-pulse" style={{ height: '100%' }} />
+                          <div className="w-1 bg-cyan-400 rounded-full animate-pulse" style={{ height: '60%', animationDelay: '150ms' }} />
+                          <div className="w-1 bg-purple-400 rounded-full animate-pulse" style={{ height: '80%', animationDelay: '300ms' }} />
+                          <div className="w-1 bg-red-400 rounded-full animate-pulse" style={{ height: '40%', animationDelay: '450ms' }} />
+                        </div>
+                      </div>
+
+                      {/* Video Thumbnail Preview & Direct Link */}
+                      {msg.media_data.thumbnail && (
+                        <div className="relative rounded-xl overflow-hidden group/thumb border border-slate-800 aspect-video max-h-48 bg-black">
+                          <img
+                            src={msg.media_data.thumbnail}
+                            alt={msg.media_data.title}
+                            className="w-full h-full object-cover group-hover/thumb:scale-105 transition duration-500 opacity-90 group-hover/thumb:opacity-100"
+                          />
+                          <a
+                            href={msg.media_data.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover/thumb:bg-black/20 transition backdrop-blur-[1px]"
+                          >
+                            <div className="w-12 h-12 rounded-full bg-red-600/90 group-hover/thumb:bg-red-600 text-white flex items-center justify-center shadow-lg group-hover/thumb:scale-110 transition active:scale-95">
+                              <Play className="w-5 h-5 fill-white ml-0.5" />
+                            </div>
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Action Button */}
+                      <a
+                        href={msg.media_data.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs tracking-wide transition-all shadow-md hover:shadow-red-500/25 active:scale-95 text-center"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Watch Directly on YouTube ↗</span>
+                      </a>
                     </div>
                   )}
 

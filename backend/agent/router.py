@@ -309,13 +309,23 @@ class FastDeterministicRouter:
             res = await screen_vision_service.analyze_screen_content(t)
             return {"handled": True, "response": res.get("message", "Screen analyzed."), "tool": "analyze_screen", "verified": True}
 
-        # 8. YouTube Playback & Music
-        yt_play_match = re.search(r"\b(?:play)\s+(.+?)(?:\s+on youtube)?$", raw_text, re.IGNORECASE)
-        if yt_play_match and not any(w in t for w in ["game", "video game", "audio file"]):
-            song = yt_play_match.group(1).strip()
-            tool_res = await registry.execute("youtube_play", {"song": song})
+        # 8. Direct YouTube Video & Music Playback
+        yt_play_match = re.search(r"\b(?:play|stream|listen to)\s+(.+?)(?:\s+on youtube|\s+video|\s+song)?$", raw_text, re.IGNORECASE)
+        if yt_play_match and not any(w in t for w in ["game", "video game", "audio file", "paint", "flight"]):
+            target_media = yt_play_match.group(1).strip()
+            clean_media = re.sub(r"^(the\s+song\s+|the\s+video\s+|the\s+track\s+|song\s+|video\s+|track\s+)", "", target_media, flags=re.IGNORECASE).strip()
+            tool_res = await registry.execute("youtube_play", {"song": clean_media or target_media})
+            res_data = tool_res.get("result", {})
             routine_learner.log_action("website_open", "YouTube")
-            return {"handled": True, "response": f"Playing {song} on YouTube.", "tool": "youtube_play", "verified": True}
+            return {
+                "handled": True,
+                "response": res_data.get("message", f"Playing {clean_media} on YouTube."),
+                "action": res_data.get("action", "open_url"),
+                "url": res_data.get("url"),
+                "media_data": res_data.get("media_data"),
+                "tool": "youtube_play",
+                "verified": True
+            }
 
         # 10. Google Maps & Directions
         directions_match = re.search(r"\b(?:show|give me|get)?\s*directions (?:from\s+(.+?)\s+)?to\s+(.+)$", raw_text, re.IGNORECASE)

@@ -37,7 +37,9 @@ async def test_fast_router_maps_and_youtube():
     res_yt = await router.route_and_execute("play Believer by Imagine Dragons")
     assert res_yt is not None
     assert res_yt["handled"] is True
-    assert "Playing Believer by Imagine Dragons on YouTube." in res_yt["response"]
+    assert "Believer by Imagine Dragons" in res_yt["response"]
+    assert res_yt.get("action") == "open_url"
+    assert "youtube.com" in res_yt.get("url", "")
 
     res_maps = await router.route_and_execute("give me directions to Bangalore Airport")
     assert res_maps is not None

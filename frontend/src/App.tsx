@@ -134,6 +134,7 @@ export const App: React.FC = () => {
             action: data.action,
             url: data.url,
             booking_data: data.booking_data,
+            media_data: data.media_data,
             timestamp: timeStr
           }
         ]);
