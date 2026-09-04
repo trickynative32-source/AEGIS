@@ -5,6 +5,7 @@ import {
   Plane, ExternalLink, Calendar
 } from 'lucide-react';
 import { ChatMessage, AssistantState } from '../types';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ChatViewProps {
   messages: ChatMessage[];
@@ -144,9 +145,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
                       : 'cyber-card text-slate-200 rounded-tl-none'
                   }`}
                 >
-                  <div className="whitespace-pre-wrap select-text font-normal">
-                    {msg.content}
-                  </div>
+                  {isUser ? (
+                    <div className="whitespace-pre-wrap select-text font-normal text-xs leading-relaxed">
+                      {msg.content}
+                    </div>
+                  ) : (
+                    <MarkdownRenderer content={msg.content} />
+                  )}
 
                   {/* Tool Execution Telemetry Pill */}
                   {msg.tool && (

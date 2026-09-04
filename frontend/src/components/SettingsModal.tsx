@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Key, Shield, Cpu, Mic, Eye, MapPin, Trash2, X, Check, Globe } from 'lucide-react';
+import { Settings, Key, Shield, Cpu, Mic, Eye, MapPin, Trash2, X, Check, Globe, Sparkles, ExternalLink } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -69,6 +69,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition">
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Frontier AI Banner */}
+        <div className="p-3.5 rounded-xl bg-gradient-to-r from-cyan-950/70 to-indigo-950/70 border border-cyan-500/30 text-slate-200 text-xs space-y-1.5 shadow-sm">
+          <div className="flex items-center gap-1.5 font-bold text-cyan-300 text-[11px]">
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span>Open & Comprehensive AI Reasoning</span>
+          </div>
+          <p className="text-[11px] text-slate-300 leading-relaxed">
+            AEGIS includes an automatic <strong>Built-in Open Knowledge Engine</strong> for open, detailed answers. For live frontier intelligence (deep generative thinking, coding, vision), enter a free <strong>Google Gemini API Key</strong> from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-cyan-400 underline hover:text-cyan-300 inline-flex items-center gap-0.5">Google AI Studio <ExternalLink className="w-2.5 h-2.5 inline" /></a>.
+          </p>
         </div>
 
         <form onSubmit={handleSave} className="space-y-4 text-xs">

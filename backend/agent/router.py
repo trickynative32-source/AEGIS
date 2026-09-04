@@ -480,18 +480,7 @@ class FastDeterministicRouter:
             msg = tool_res.get("result", {}).get("message", f"Closed {target}.")
             return {"handled": True, "response": msg, "tool": "close_application", "verified": tool_res.get("verified", False)}
 
-        # 13. General Fact / Entity Questions (e.g. "Who is Albert Einstein?")
-        if re.search(r"^(who is|who was|tell me about|explain|what is the capital of)\s+", t) and not any(w in t for w in ["my screen", "camera", "clock", "laptop", "bag", "room"]):
-            search_res = search_web_summary(raw_text)
-            if search_res.get("success"):
-                return {
-                    "handled": True,
-                    "response": search_res["message"],
-                    "tool": "web_search",
-                    "verified": True
-                }
-
-        # 14. Volume Adjustments
+        # 13. Volume Adjustments
         if "volume up" in t or "increase volume" in t:
             await registry.execute("set_volume", {"action": "up"})
             return {"handled": True, "response": "Volume increased.", "tool": "set_volume", "verified": True}

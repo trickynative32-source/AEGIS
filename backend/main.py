@@ -312,6 +312,34 @@ async def get_settings():
         "has_api_key": bool(settings.OPENROUTER_API_KEY or settings.GEMINI_API_KEY)
     }
 
+def persist_settings_to_env(updates: Dict[str, Any]):
+    env_path = os.path.join(settings.BASE_DIR, ".env")
+    env_lines = {}
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        env_lines[k.strip()] = v.strip()
+        except Exception as e:
+            logger.warning(f"Reading .env notice: {e}")
+
+    for k, v in updates.items():
+        if v is not None and k in [
+            "OPENROUTER_API_KEY", "GEMINI_API_KEY", "OPENROUTER_MODEL",
+            "CAMERA_ENABLED", "LEARNING_ENABLED", "LOCATION_ENABLED", "VOICE_FIRST_MODE"
+        ]:
+            env_lines[k] = str(v)
+
+    try:
+        with open(env_path, "w", encoding="utf-8") as f:
+            for k, v in env_lines.items():
+                f.write(f"{k}={v}\n")
+    except Exception as e:
+        logger.warning(f"Writing .env notice: {e}")
+
 @app.post("/api/settings")
 async def update_settings(data: Dict[str, Any]):
     if "OPENROUTER_API_KEY" in data:
@@ -328,7 +356,14 @@ async def update_settings(data: Dict[str, Any]):
         settings.LOCATION_ENABLED = bool(data["LOCATION_ENABLED"])
     if "VOICE_FIRST_MODE" in data:
         settings.VOICE_FIRST_MODE = bool(data["VOICE_FIRST_MODE"])
-    return {"status": "updated"}
+
+    persist_settings_to_env(data)
+
+    return {
+        "status": "updated",
+        "has_api_key": bool(settings.OPENROUTER_API_KEY or settings.GEMINI_API_KEY),
+        "model": settings.OPENROUTER_MODEL
+    }
 
 @app.post("/api/stt")
 async def transcribe_audio_file(file: UploadFile = File(...)):
