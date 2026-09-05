@@ -222,7 +222,13 @@ class FastDeterministicRouter:
             re.search(r"(\d+\s*[\+\-\*\/\%\^\×\÷]\s*\d+|\d+\s*x\s*\d+|\d+\s*%\s+of\s+\d+|sqrt\(\d+|cbrt\(\d+|\b(sin|cos|tan|log|factorial)\(\d+)", t) or
             re.search(r"^(calculate|solve|evaluate|how much is|what is \d+|what's \d+)\b", t) or
             re.search(r"\b(\d+\s+(?:plus|minus|times|multiplied by|divided by)\s+\d+)\b", t) or
-            re.match(r"^[\d\s\+\-\*\/\(\)\.\^\%]+$", t)
+            re.search(r"\b(gcd|lcm|hcf|prime|factors? of|prime factorization|factorial|npr|ncr|permutation|combination)\b", t) or
+            re.search(r"\b(mean|median|mode|variance|standard deviation|hypotenuse|pythagorean)\b", t) or
+            re.search(r"\b(area of (a |the )?(circle|rectangle|triangle)|circumference of (a |the )?circle)\b", t) or
+            re.search(r"\b(celsius to fahrenheit|fahrenheit to celsius|km to miles|miles to km|kg to lbs|lbs to kg)\b", t) or
+            re.search(r"\b(increase|decrease)\s+\d+(\.\d+)?\s*%\b", t) or
+            re.search(r"(\b[a-z]\b|\d+).*=.*(\b[a-z]\b|\d+)", t) or
+            re.match(r"^[\d\s\+\-\*\/\(\)\.\^\%x=]+$", t)
         )
         if is_math_candidate and not any(w in t for w in ["time", "date", "reminder", "remind", "camera", "youtube", "directions", "map", "pm", "am"]):
             math_res = evaluate_math_expression(raw_text)

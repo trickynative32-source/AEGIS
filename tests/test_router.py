@@ -141,5 +141,62 @@ async def test_fast_router_vision_and_object_queries():
     assert res_detect is not None
     assert res_detect["handled"] is True
 
+@pytest.mark.asyncio
+async def test_fast_router_advanced_math():
+    # Linear equation
+    res_lin = await router.route_and_execute("solve 2x + 5 = 15")
+    assert res_lin is not None
+    assert res_lin["handled"] is True
+    assert "x = 5" in res_lin["response"]
+
+    # Quadratic equation
+    res_quad = await router.route_and_execute("x^2 - 5x + 6 = 0")
+    assert res_quad is not None
+    assert res_quad["handled"] is True
+    assert ("x = 3" in res_quad["response"] and "x = 2" in res_quad["response"])
+
+    # Number theory: GCD
+    res_gcd = await router.route_and_execute("gcd of 48 and 18")
+    assert res_gcd is not None
+    assert res_gcd["handled"] is True
+    assert "6" in res_gcd["response"]
+
+    # Number theory: Primality
+    res_prime = await router.route_and_execute("is 29 a prime number?")
+    assert res_prime is not None
+    assert res_prime["handled"] is True
+    assert "prime" in res_prime["response"].lower()
+
+    # Statistics: Mean
+    res_mean = await router.route_and_execute("mean of 10, 20, 30, 40")
+    assert res_mean is not None
+    assert res_mean["handled"] is True
+    assert "25" in res_mean["response"]
+
+    # Geometry: Hypotenuse
+    res_hyp = await router.route_and_execute("hypotenuse with sides 3 and 4")
+    assert res_hyp is not None
+    assert res_hyp["handled"] is True
+    assert "5" in res_hyp["response"]
+
+    # Conversions: Celsius to Fahrenheit
+    res_c2f = await router.route_and_execute("convert 100 celsius to fahrenheit")
+    assert res_c2f is not None
+    assert res_c2f["handled"] is True
+    assert "212" in res_c2f["response"]
+
+    # Number theory: Prime factors
+    res_factors = await router.route_and_execute("prime factors of 60")
+    assert res_factors is not None
+    assert res_factors["handled"] is True
+    assert "2^2" in res_factors["response"]
+
+    # Geometry: Circle area
+    res_circle = await router.route_and_execute("area of circle with radius 7")
+    assert res_circle is not None
+    assert res_circle["handled"] is True
+    assert "153.9" in res_circle["response"]
+
+
 
 
