@@ -80,8 +80,7 @@ def generate_code_solution(query: str) -> Optional[str]:
     # Python calculator / basic apps
     if "calculator" in q_low and any(w in q_low for w in ["python", "code", "script", "program", "write"]):
         return (
-            "### 🧮 Complete Python Calculator Implementation\n\n"
-            "Here is a clean, robust, object-oriented Python calculator featuring full error handling, input validation, and history tracking:\n\n"
+            "Here is a complete, production-grade Python calculator implementation with error handling and history tracking:\n\n"
             "```python\n"
             "class Calculator:\n"
             "    def __init__(self):\n"
@@ -110,7 +109,7 @@ def generate_code_solution(query: str) -> Optional[str]:
             "    print('Division (100 / 4):', calc.divide(100, 4))\n"
             "    print('History:', calc.history)\n"
             "```\n\n"
-            "#### 🚀 Key Features:\n"
+            "**Key Features**:\n"
             "- **Type annotations** for clean code standards\n"
             "- **ZeroDivisionError safeguard**\n"
             "- **Calculation audit trail** stored in `self.history`\n"
@@ -119,8 +118,7 @@ def generate_code_solution(query: str) -> Optional[str]:
     # Binary search
     if "binary search" in q_low:
         return (
-            "### 🔍 Binary Search Implementation (O(log n))\n\n"
-            "Binary search locates a target value within a sorted array by repeatedly dividing the search interval in half.\n\n"
+            "Here is an efficient Binary Search implementation with logarithmic O(log n) time complexity:\n\n"
             "```python\n"
             "from typing import List, Optional\n\n"
             "def binary_search(arr: List[int], target: int) -> Optional[int]:\n"
@@ -143,7 +141,7 @@ def generate_code_solution(query: str) -> Optional[str]:
             "idx = binary_search(numbers, 11)\n"
             "print(f'Found 11 at index: {idx}')  # Output: index 5\n"
             "```\n\n"
-            "#### 📊 Complexity Analysis:\n"
+            "**Complexity Analysis**:\n"
             "- **Best Case**: $O(1)$ (target is at exact middle)\n"
             "- **Worst / Average Case**: $O(\\log n)$ (splits search space in half each step)\n"
             "- **Auxiliary Space**: $O(1)$ iterative memory\n"
@@ -174,22 +172,22 @@ def synthesize_open_ai_response(user_query: str) -> Dict[str, Any]:
         extract = wiki_data.get("extract", "")
         snippets = wiki_data.get("snippets", [])
 
-        # Build comprehensive multi-section answer
-        sections = [f"## 📚 {title}"]
+        # Build comprehensive multi-section answer with conversational opening
+        sections = [f"Here is comprehensive information regarding **{title}**:"]
         if desc:
             sections.append(f"*{desc}*\n")
 
         if extract:
-            sections.append(f"### 🌐 Executive Summary\n{extract}")
+            sections.append(f"**Executive Summary**:\n{extract}")
 
         # Add key insights and related components
         if snippets:
             bullet_points = "\n".join([f"- **Key Insight**: {s}..." for s in snippets])
-            sections.append(f"### 🔬 Core Concepts & Context\n{bullet_points}")
+            sections.append(f"**Core Concepts & Context**:\n{bullet_points}")
 
         if web_snippets:
             web_points = "\n".join([f"- **{w['title']}**: {w['body']}" for w in web_snippets[:2]])
-            sections.append(f"### 💡 Practical Perspectives\n{web_points}")
+            sections.append(f"**Practical Perspectives**:\n{web_points}")
 
         sections.append(
             f"\n---\n> [!NOTE]\n"
@@ -201,9 +199,9 @@ def synthesize_open_ai_response(user_query: str) -> Dict[str, Any]:
 
     # 3. Fallback to Web Snippets if Wikipedia didn't match directly
     if web_snippets:
-        sections = [f"## 🌐 Information on '{raw_query}'\n"]
+        sections = [f"Here is what I found regarding **'{raw_query}'**:\n"]
         for i, item in enumerate(web_snippets):
-            sections.append(f"### {i+1}. {item['title']}\n{item['body']}")
+            sections.append(f"**{i+1}. {item['title']}**\n{item['body']}")
 
         sections.append(
             f"\n---\n> [!TIP]\n"
@@ -213,12 +211,13 @@ def synthesize_open_ai_response(user_query: str) -> Dict[str, Any]:
 
     # 4. Universal Articulate Generative Response
     clean_topic = re.sub(r"^(what is|who is|explain|tell me about|how does|why is)\s+", "", raw_query, flags=re.IGNORECASE).strip().rstrip("?.!")
+    topic_name = clean_topic.title() if clean_topic else "Your Request"
     formatted_resp = (
-        f"### 💡 Insights on {clean_topic.title() or 'Your Request'}\n\n"
+        f"Here is an overview regarding **{topic_name}**:\n\n"
         f"You asked about **{raw_query}**.\n\n"
-        f"#### 🔍 Key Considerations:\n"
-        f"- **Context & Definition**: This topic encompasses foundational concepts, practical applications, and active developments.\n"
-        f"- **Actionable Guidance**: When exploring this area, breaking it down into fundamental principles, hands-on examples, and iterative testing yields the best results.\n\n"
+        f"**Key Considerations**:\n"
+        f"- **Context & Definition**: This topic encompasses foundational principles, practical applications, and active developments.\n"
+        f"- **Actionable Guidance**: When exploring this area, breaking it down into fundamental principles, practical examples, and iterative testing yields the best results.\n\n"
         f"> [!TIP]\n"
         f"> You can ask me to write code, explain specific subtopics in depth, compare alternatives, or connect your **Google Gemini API Key** in Settings for live cloud generative intelligence."
     )

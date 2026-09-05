@@ -34,10 +34,34 @@ export const ChatView: React.FC<ChatViewProps> = ({
     setTimeout(() => setCopiedId(null), 1500);
   };
 
+  const cleanSpeechText = (input: string): string => {
+    return input
+      .replace(/```[\s\S]*?```/g, ' Here is the code block. ')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/^\s*#{1,6}\s*/gm, '')
+      .replace(/#+/g, '')
+      .replace(/>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/gi, '')
+      .replace(/^\s*>\s*/gm, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/https?:\/\/(?:www\.)?([a-zA-Z0-9.-]+)(?:\/[^\s]*)?/g, '$1')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/_([^_]+)_/g, '$1')
+      .replace(/~~([^~]+)~~/g, '$1')
+      .replace(/^\s*[-*+]\s+/gm, '')
+      .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
+      .replace(/[\r\n]+/g, '. ')
+      .replace(/\s+/g, ' ')
+      .replace(/\.{2,}/g, '.')
+      .trim();
+  };
+
   const handlePlayAudio = (id: string, text: string) => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+      const sanitized = cleanSpeechText(text);
+      const utterance = new SpeechSynthesisUtterance(sanitized || text);
       utterance.rate = 1.05;
       utterance.pitch = 1.0;
       utterance.onend = () => setSpeakingMsgId(null);

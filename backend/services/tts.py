@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 import base64
 import logging
@@ -10,6 +11,73 @@ import pyttsx3
 from backend.config import settings
 
 logger = logging.getLogger("AEGIS.TTS")
+
+def clean_text_for_speech(text: str) -> str:
+    """
+    Strips all markdown symbols (###, ##, #, *, **, __, code blocks, emojis, URLs, etc.)
+    so that Edge-TTS and SAPI produce 100% natural, human-like voice synthesis without
+    pronouncing symbols like 'hash hash hash', 'number sign', or 'asterisk'.
+    """
+    if not text or not text.strip():
+        return ""
+
+    s = text.strip()
+
+    # 1. Replace multiline code blocks (```...```) with a spoken placeholder
+    s = re.sub(r"```[\s\S]*?```", " Here is the code. ", s)
+
+    # 2. Strip inline code backticks `code` -> code
+    s = re.sub(r"`([^`]+)`", r"\1", s)
+
+    # 3. Strip all markdown headers: ### Header, ## Header, # Header
+    s = re.sub(r"(?m)^\s*#{1,6}\s*", "", s)
+    # Strip any remaining standalone or repeated hash symbols anywhere in the text
+    s = re.sub(r"#+", "", s)
+
+    # 4. Strip blockquote alerts (> [!NOTE], > [!TIP], etc.) and blockquotes
+    s = re.sub(r">\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"(?m)^\s*>\s*", "", s)
+
+    # 5. Convert markdown links [title](url) -> title
+    s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)
+
+    # 6. Simplify raw URLs: https://domain.com/path -> domain.com
+    s = re.sub(r"https?://(?:www\.)?([a-zA-Z0-9.-]+)(?:/[^\s]*)?", r"\1", s)
+
+    # 7. Strip bold, italic, strikethrough markers
+    s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
+    s = re.sub(r"\*([^*]+)\*", r"\1", s)
+    s = re.sub(r"__([^_]+)__", r"\1", s)
+    s = re.sub(r"_([^_]+)_", r"\1", s)
+    s = re.sub(r"~~([^~]+)~~", r"\1", s)
+
+    # 8. Strip bullet point markers (- , * , + )
+    s = re.sub(r"(?m)^\s*[-*+]\s+", "", s)
+
+    # 9. Strip emojis so speech synthesizer doesn't pronounce emoji names (e.g. '💡' -> 'light bulb')
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "\U0001F900-\U0001F9FF"
+        "\U0001FA00-\U0001FA6F"
+        "\U0001FA70-\U0001FAFF"
+        "]+",
+        flags=re.UNICODE
+    )
+    s = emoji_pattern.sub("", s)
+
+    # 10. Normalize multiple line breaks and dots into clean sentence pauses
+    s = re.sub(r"[\r\n]+", ". ", s)
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"\.{2,}", ".", s)
+    s = re.sub(r"\.\s*\.", ".", s)
+
+    return s.strip()
 
 class TTSService:
     def __init__(self):
@@ -46,7 +114,10 @@ class TTSService:
         if not text or not text.strip():
             return None
 
-        clean_text = text.strip()
+        clean_text = clean_text_for_speech(text)
+        if not clean_text:
+            return None
+
         self.cancel_requested = False
         self.is_speaking = True
 
@@ -89,12 +160,16 @@ class TTSService:
 
     def speak_offline_direct(self, text: str):
         """Direct 100% offline speech via Windows SAPI in background thread."""
+        clean_text = clean_text_for_speech(text)
+        if not clean_text:
+            return
+
         def _speak():
             try:
                 with self._sapi_lock:
                     engine = self._get_sapi_engine()
                     if engine:
-                        engine.say(text)
+                        engine.say(clean_text)
                         engine.runAndWait()
             except Exception as e:
                 logger.error(f"Offline direct speak error: {e}")
