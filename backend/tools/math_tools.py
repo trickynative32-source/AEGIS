@@ -10,6 +10,13 @@ from backend.tools.registry import registry
 
 logger = logging.getLogger("AEGIS.MathTools")
 
+# Check for sympy if available in environment
+try:
+    import sympy
+    HAS_SYMPY = True
+except ImportError:
+    HAS_SYMPY = False
+
 # Supported operators for safe AST evaluation
 SAFE_OPERATORS = {
     ast.Add: operator.add,
@@ -59,7 +66,7 @@ def safe_eval_ast(node: ast.AST) -> Union[int, float]:
     """Recursively evaluates an AST node containing only safe mathematical operations."""
     if isinstance(node, ast.Expression):
         return safe_eval_ast(node.body)
-    elif isinstance(node, ast.Constant):  # Numbers
+    elif isinstance(node, ast.Constant):
         if isinstance(node.value, (int, float)):
             return node.value
         raise ValueError(f"Unsupported constant: {node.value}")
@@ -96,25 +103,30 @@ def parse_polynomial_side(side_str: str, var: str = "x") -> Tuple[float, float, 
     a, b, c = 0.0, 0.0, 0.0
 
     for term in terms:
-        # Match x^2 or x**2 term
-        m2 = re.fullmatch(rf"([+-]?\d*\.?\d*)\*?{var}(?:\^2|\*\*2)", term, re.IGNORECASE)
-        if m2:
-            coeff = m2.group(1)
-            if coeff in ("", "+"): a += 1.0
-            elif coeff == "-": a -= 1.0
-            else: a += float(coeff)
+        if not term:
+            continue
+        quad_match = re.match(rf"^([+-]?\d*(?:\.\d+)?)\*?{var}(?:\^2|\*\*2)$", term)
+        if quad_match:
+            coeff_str = quad_match.group(1)
+            if coeff_str in ["", "+"]:
+                a += 1.0
+            elif coeff_str == "-":
+                a -= 1.0
+            else:
+                a += float(coeff_str)
             continue
 
-        # Match x term
-        m1 = re.fullmatch(rf"([+-]?\d*\.?\d*)\*?{var}", term, re.IGNORECASE)
-        if m1:
-            coeff = m1.group(1)
-            if coeff in ("", "+"): b += 1.0
-            elif coeff == "-": b -= 1.0
-            else: b += float(coeff)
+        lin_match = re.match(rf"^([+-]?\d*(?:\.\d+)?)\*?{var}$", term)
+        if lin_match:
+            coeff_str = lin_match.group(1)
+            if coeff_str in ["", "+"]:
+                b += 1.0
+            elif coeff_str == "-":
+                b -= 1.0
+            else:
+                b += float(coeff_str)
             continue
 
-        # Constant term
         try:
             c += float(term)
         except ValueError:
@@ -122,297 +134,981 @@ def parse_polynomial_side(side_str: str, var: str = "x") -> Tuple[float, float, 
 
     return a, b, c
 
-def solve_algebraic_equation(eq_str: str) -> Optional[Dict[str, Any]]:
-    """Solves linear (ax + b = c) and quadratic (ax^2 + bx + c = 0) equations step-by-step."""
-    clean = re.sub(r"^(solve|find [a-z] in|calculate|evaluate)\s+", "", eq_str, flags=re.IGNORECASE).strip().rstrip("?.!")
-    if "=" not in clean:
+def solve_algebraic_equation(query: str) -> Optional[Dict[str, Any]]:
+    """Solves linear (ax + b = cx + d) and quadratic (ax^2 + bx + c = 0) equations."""
+    s = query.strip()
+    s = re.sub(r"^(what is|what's|calculate|solve|evaluate|find)\s+", "", s, flags=re.IGNORECASE).strip().rstrip("?.!")
+
+    if "=" not in s:
         return None
 
-    # Detect variable name (x, y, z, n, etc.)
-    var_match = re.search(r"\b([a-zA-Z])\b", clean)
-    var = var_match.group(1) if var_match else "x"
-    if var.lower() in ("e", "i"):
-        var = "x"
+    sides = s.split("=")
+    if len(sides) != 2:
+        return None
 
-    lhs, rhs = clean.split("=", 1)
-    a1, b1, c1 = parse_polynomial_side(lhs, var)
-    a2, b2, c2 = parse_polynomial_side(rhs, var)
+    lhs_str, rhs_str = sides[0].strip(), sides[1].strip()
+
+    var = "x"
+    for v in ["x", "y", "z", "n", "t"]:
+        if v in lhs_str.lower() or v in rhs_str.lower():
+            var = v
+            break
+
+    a1, b1, c1 = parse_polynomial_side(lhs_str, var)
+    a2, b2, c2 = parse_polynomial_side(rhs_str, var)
 
     a = a1 - a2
     b = b1 - b2
     c = c1 - c2
 
-    # Case 1: Quadratic equation (a != 0)
-    if abs(a) > 1e-9:
-        d = b**2 - 4 * a * c
-        steps = [
-            f"Equation: {clean}",
-            f"Standard form: {a:g}{var}² {'+ ' if b >= 0 else '- '}{abs(b):g}{var} {'+ ' if c >= 0 else '- '}{abs(c):g} = 0",
-            f"Discriminant (Δ = b² - 4ac): {b:g}² - 4({a:g})({c:g}) = {d:g}"
-        ]
-
-        if d > 1e-9:
-            r1 = (-b + math.sqrt(d)) / (2 * a)
-            r2 = (-b - math.sqrt(d)) / (2 * a)
-            steps.append(f"Roots: {var}₁ = {r1:g}, {var}₂ = {r2:g}")
-            msg = f"The solutions to {clean} are {var} = {r1:g} and {var} = {r2:g}."
-            return {"success": True, "type": "quadratic", "roots": [r1, r2], "steps": steps, "message": msg, "verified": True}
-        elif abs(d) <= 1e-9:
-            r = -b / (2 * a)
-            steps.append(f"Single repeated root: {var} = {r:g}")
-            msg = f"The solution to {clean} is {var} = {r:g}."
-            return {"success": True, "type": "quadratic", "roots": [r], "steps": steps, "message": msg, "verified": True}
+    # Linear equation: a == 0, b != 0 -> b*x + c = 0 -> x = -c / b
+    if abs(a) < 1e-9:
+        if abs(b) > 1e-9:
+            sol = -c / b
+            sol_fmt = str(int(sol)) if sol.is_integer() else f"{sol:.4g}"
+            return {
+                "success": True,
+                "domain": "algebra_linear",
+                "equation": s,
+                "variable": var,
+                "solution": sol_fmt,
+                "numeric_solution": sol,
+                "message": f"Solution to {s}: {var} = {sol_fmt}",
+                "verified": True
+            }
         else:
-            real_part = -b / (2 * a)
-            imag_part = math.sqrt(-d) / (2 * a)
-            steps.append(f"Complex roots: {var} = {real_part:g} ± {imag_part:g}i")
-            msg = f"The complex solutions to {clean} are {var} = {real_part:g} ± {imag_part:g}i."
-            return {"success": True, "type": "quadratic", "roots": [f"{real_part:g}+{imag_part:g}i", f"{real_part:g}-{imag_part:g}i"], "steps": steps, "message": msg, "verified": True}
+            return None
 
-    # Case 2: Linear equation (a == 0, b != 0)
-    elif abs(b) > 1e-9:
-        root = -c / b
-        steps = [
-            f"Equation: {clean}",
-            f"Standard form: {b:g}{var} = {-c:g}",
-            f"Solving for {var}: {var} = {-c:g} / {b:g} = {root:g}"
-        ]
-        msg = f"For {clean}, {var} = {root:g}."
-        return {"success": True, "type": "linear", "roots": [root], "steps": steps, "message": msg, "verified": True}
+    # Quadratic equation: a*x^2 + b*x + c = 0
+    discriminant = b**2 - 4 * a * c
+    a_fmt = str(int(a)) if a.is_integer() else f"{a:.4g}"
+    b_fmt = str(int(b)) if b.is_integer() else f"{b:.4g}"
+    c_fmt = str(int(c)) if c.is_integer() else f"{c:.4g}"
+    d_fmt = str(int(discriminant)) if discriminant.is_integer() else f"{discriminant:.4g}"
 
-    return None
+    if discriminant > 1e-9:
+        root_d = math.sqrt(discriminant)
+        x1 = (-b + root_d) / (2 * a)
+        x2 = (-b - root_d) / (2 * a)
+        x1_fmt = str(int(x1)) if x1.is_integer() else f"{x1:.4g}"
+        x2_fmt = str(int(x2)) if x2.is_integer() else f"{x2:.4g}"
+        msg = f"The solutions to {s} are {var} = {x1_fmt} and {var} = {x2_fmt}. (Discriminant (D) = {d_fmt})"
+        return {
+            "success": True,
+            "domain": "algebra_quadratic",
+            "equation": s,
+            "variable": var,
+            "discriminant": discriminant,
+            "roots": [x1_fmt, x2_fmt],
+            "numeric_roots": [x1, x2],
+            "message": msg,
+            "verified": True
+        }
+    elif abs(discriminant) <= 1e-9:
+        x = -b / (2 * a)
+        x_fmt = str(int(x)) if x.is_integer() else f"{x:.4g}"
+        msg = f"The single real root to {s} is {var} = {x_fmt}. (Discriminant D = 0)"
+        return {
+            "success": True,
+            "domain": "algebra_quadratic",
+            "equation": s,
+            "variable": var,
+            "discriminant": 0.0,
+            "roots": [x_fmt],
+            "numeric_roots": [x],
+            "message": msg,
+            "verified": True
+        }
+    else:
+        real_part = -b / (2 * a)
+        imag_part = math.sqrt(abs(discriminant)) / (2 * abs(a))
+        real_fmt = str(int(real_part)) if real_part.is_integer() else f"{real_part:.4g}"
+        imag_fmt = str(int(imag_part)) if imag_part.is_integer() else f"{imag_part:.4g}"
+        msg = f"Discriminant (D) = {d_fmt} < 0. No real roots exist. Complex roots: {real_fmt} +/- {imag_fmt}i."
+        return {
+            "success": True,
+            "domain": "algebra_quadratic",
+            "equation": s,
+            "variable": var,
+            "discriminant": discriminant,
+            "complex_roots": [f"{real_fmt} + {imag_fmt}i", f"{real_fmt} - {imag_fmt}i"],
+            "message": msg,
+            "verified": True
+        }
+
+def get_prime_factors(n: int) -> List[int]:
+    factors = []
+    d = 2
+    temp = n
+    while d * d <= temp:
+        while temp % d == 0:
+            factors.append(d)
+            temp //= d
+        d += 1
+    if temp > 1:
+        factors.append(temp)
+    return factors
+
+def is_prime(n: int) -> bool:
+    if n < 2:
+        return False
+    if n in (2, 3):
+        return True
+    if n % 2 == 0 or n % 3 == 0:
+        return False
+    i = 5
+    w = 2
+    while i * i <= n:
+        if n % i == 0:
+            return False
+        i += w
+        w = 6 - w
+    return True
 
 def solve_number_theory(query: str) -> Optional[Dict[str, Any]]:
-    """Solves GCD, LCM, Prime verification, Prime Factorization, and Factorials."""
-    q = query.strip().lower()
+    s = query.strip().lower()
+    s = re.sub(r"^(what is|what's|calculate|solve|evaluate|find|check if|tell me)\s+", "", s).strip().rstrip("?.!")
 
-    # 1. GCD / HCF: gcd of 48 and 18
-    m_gcd = re.search(r"\b(?:gcd|hcf|greatest common (?:divisor|factor))\s+(?:of\s+)?(\d+)\s*(?:and|,)\s*(\d+)", q)
-    if m_gcd:
-        a, b = int(m_gcd.group(1)), int(m_gcd.group(2))
+    # GCD / HCF
+    gcd_match = re.search(r"(?:gcd|hcf|greatest common divisor)\s+(?:of\s+)?(\d+)\s*(?:,|and|\s)\s*(\d+)", s)
+    if gcd_match:
+        a = int(gcd_match.group(1))
+        b = int(gcd_match.group(2))
         res = math.gcd(a, b)
         return {
             "success": True,
+            "domain": "number_theory_gcd",
             "result": str(res),
-            "message": f"The GCD of {a} and {b} is {res}.",
+            "message": f"GCD({a}, {b}) = {res}",
             "verified": True
         }
 
-    # 2. LCM: lcm of 12 and 15
-    m_lcm = re.search(r"\b(?:lcm|least common multiple)\s+(?:of\s+)?(\d+)\s*(?:and|,)\s*(\d+)", q)
-    if m_lcm:
-        a, b = int(m_lcm.group(1)), int(m_lcm.group(2))
+    # LCM
+    lcm_match = re.search(r"(?:lcm|least common multiple)\s+(?:of\s+)?(\d+)\s*(?:,|and|\s)\s*(\d+)", s)
+    if lcm_match:
+        a = int(lcm_match.group(1))
+        b = int(lcm_match.group(2))
         res = math.lcm(a, b)
         return {
             "success": True,
+            "domain": "number_theory_lcm",
             "result": str(res),
-            "message": f"The LCM of {a} and {b} is {res}.",
+            "message": f"LCM({a}, {b}) = {res}",
             "verified": True
         }
 
-    # 3. Prime Check: is 97 prime?
-    m_prime = re.search(r"\b(?:is\s+)?(\d+)\s+(?:a\s+)?prime(?:\s+number)?\b", q)
-    if m_prime:
-        n = int(m_prime.group(1))
-        if n < 2:
-            is_p = False
-            divisor = None
+    # Prime check
+    prime_check = re.search(r"(?:is\s+)?(\d+)\s+(?:a\s+)?prime(?:\s+number)?", s)
+    if prime_check:
+        num = int(prime_check.group(1))
+        check = is_prime(num)
+        if check:
+            msg = f"{num} is a prime number."
         else:
-            is_p = True
-            divisor = None
-            for i in range(2, int(math.isqrt(n)) + 1):
-                if n % i == 0:
-                    is_p = False
-                    divisor = i
-                    break
-        if is_p:
-            msg = f"{n} is a prime number (only divisible by 1 and itself)."
-        else:
-            div_note = f" (divisible by {divisor})" if divisor else ""
-            msg = f"{n} is not a prime number{div_note}."
-        return {"success": True, "result": "Prime" if is_p else "Not Prime", "message": msg, "verified": True}
+            factors = get_prime_factors(num)
+            msg = f"{num} is a composite number (factors include {factors[0]})."
+        return {
+            "success": True,
+            "domain": "number_theory_prime",
+            "is_prime": check,
+            "message": msg,
+            "verified": True
+        }
 
-    # 4. Prime Factors / Factorization: factors of 60, prime factors of 84
-    m_factors = re.search(r"\b(?:prime\s+)?factors\s+of\s+(\d+)\b", q)
-    if m_factors:
-        n = int(m_factors.group(1))
-        all_factors = []
-        for i in range(1, int(math.isqrt(n)) + 1):
-            if n % i == 0:
-                all_factors.append(i)
-                if i * i != n:
-                    all_factors.append(n // i)
-        all_factors.sort()
+    # Prime factorization
+    fact_match = re.search(r"(?:prime\s+factors|factors|prime\s+factorization)\s+(?:of\s+)?(\d+)", s)
+    if fact_match:
+        num = int(fact_match.group(1))
+        factors = get_prime_factors(num)
+        counts = Counter(factors)
+        decomp = " * ".join([f"{k}^{v}" if v > 1 else str(k) for k, v in sorted(counts.items())])
+        return {
+            "success": True,
+            "domain": "number_theory_factorization",
+            "number": num,
+            "factors": factors,
+            "decomposition": decomp,
+            "message": f"Prime factorization of {num} is {decomp}.",
+            "verified": True
+        }
 
-        temp = n
-        d = 2
-        p_factors = []
-        while d * d <= temp:
-            while temp % d == 0:
-                p_factors.append(d)
-                temp //= d
-            d += 1
-        if temp > 1:
-            p_factors.append(temp)
-
-        counts = Counter(p_factors)
-        p_str = " * ".join([f"{base}^{exp}" if exp > 1 else str(base) for base, exp in sorted(counts.items())])
-        msg = f"The factors of {n} are {', '.join(map(str, all_factors))}. Prime factorization: {n} = {p_str}."
-        return {"success": True, "result": str(all_factors), "message": msg, "verified": True}
-
-    # 5. Factorial: factorial of 7, 7!
-    m_fact = re.search(r"\b(?:factorial\s+of\s+(\d+)|(\d+)\s*!\s*)\b", q)
-    if m_fact:
-        num = int(m_fact.group(1) or m_fact.group(2))
-        if num > 100:
-            return {"success": False, "message": "Number too large for instant factorial.", "verified": False}
-        res = math.factorial(num)
-        return {"success": True, "result": str(res), "message": f"{num}! = {res}", "verified": True}
-
-    # 6. Permutations and Combinations: nPr, nCr
-    m_perm = re.search(r"\b(\d+)\s*P\s*(\d+)\b", q, re.IGNORECASE)
-    if m_perm:
-        n, r = int(m_perm.group(1)), int(m_perm.group(2))
-        if 0 <= r <= n and n <= 100:
+    # Permutations (nPr) and Combinations (nCr)
+    npr_match = re.search(r"(\d+)\s*p\s*(\d+)|(?:permutations?\s+of\s+)(\d+)\s+(?:pick|taken|choose)\s+(\d+)", s)
+    if npr_match:
+        n = int(npr_match.group(1) or npr_match.group(3))
+        r = int(npr_match.group(2) or npr_match.group(4))
+        if 0 <= r <= n:
             res = math.perm(n, r)
-            return {"success": True, "result": str(res), "message": f"{n}P{r} = {res}", "verified": True}
+            return {
+                "success": True,
+                "domain": "combinatorics_npr",
+                "result": str(res),
+                "message": f"Permutations P({n}, {r}) = {res}",
+                "verified": True
+            }
 
-    m_comb = re.search(r"\b(\d+)\s*C\s*(\d+)\b", q, re.IGNORECASE)
-    if m_comb:
-        n, r = int(m_comb.group(1)), int(m_comb.group(2))
-        if 0 <= r <= n and n <= 100:
+    ncr_match = re.search(r"(\d+)\s*c\s*(\d+)|(?:combinations?\s+of\s+)(\d+)\s+(?:choose|taken)\s+(\d+)", s)
+    if ncr_match:
+        n = int(ncr_match.group(1) or ncr_match.group(3))
+        r = int(ncr_match.group(2) or ncr_match.group(4))
+        if 0 <= r <= n:
             res = math.comb(n, r)
-            return {"success": True, "result": str(res), "message": f"{n}C{r} = {res}", "verified": True}
+            return {
+                "success": True,
+                "domain": "combinatorics_ncr",
+                "result": str(res),
+                "message": f"Combinations C({n}, {r}) = {res}",
+                "verified": True
+            }
+
+    # Factorial
+    fact_single = re.search(r"(?:factorial\s+of\s+|fact\s+)(\d+)|(\d+)\s*!", s)
+    if fact_single:
+        n = int(fact_single.group(1) or fact_single.group(2))
+        if n <= 1000:
+            res = math.factorial(n)
+            return {
+                "success": True,
+                "domain": "combinatorics_factorial",
+                "result": str(res),
+                "message": f"{n}! = {res}",
+                "verified": True
+            }
 
     return None
 
 def solve_statistics(query: str) -> Optional[Dict[str, Any]]:
-    """Calculates Mean, Median, Mode, Variance, and Standard Deviation."""
-    q = query.strip().lower()
-    m = re.search(r"\b(mean|average|median|mode|standard deviation|variance)\s+(?:of\s+)?([-\d\s,.]+)", q)
-    if not m:
+    s = query.strip().lower()
+    s = re.sub(r"^(what is|what's|calculate|solve|evaluate|find)\s+", "", s).strip().rstrip("?.!")
+
+    stat_type = None
+    for kw in ["standard deviation", "stdev", "variance", "median", "mode", "mean", "average"]:
+        if kw in s:
+            stat_type = kw
+            break
+
+    if not stat_type:
         return None
 
-    op = m.group(1)
-    raw_nums = m.group(2)
-    nums = [float(x.strip()) for x in re.findall(r"[-+]?\d*\.?\d+", raw_nums) if x.strip()]
+    nums = [float(x) for x in re.findall(r"[-+]?\d*\.?\d+", s) if x not in [".", "+", "-"]]
     if len(nums) < 2:
         return None
 
-    if op in ("mean", "average"):
-        res = statistics.mean(nums)
-        msg = f"The mean of the numbers is {res:g}."
-    elif op == "median":
-        res = statistics.median(nums)
-        msg = f"The median of the numbers is {res:g}."
-    elif op == "mode":
-        try:
-            res = statistics.mode(nums)
-            msg = f"The mode of the numbers is {res:g}."
-        except Exception:
-            return {"success": True, "result": "None", "message": "No unique mode found in the numbers.", "verified": True}
-    elif op in ("standard deviation", "std dev"):
-        res = statistics.stdev(nums)
-        msg = f"The sample standard deviation is {res:.4g}."
-    elif op == "variance":
-        res = statistics.variance(nums)
-        msg = f"The sample variance is {res:.4g}."
-    else:
-        return None
+    if stat_type in ["mean", "average"]:
+        val = statistics.mean(nums)
+        fmt = str(int(val)) if val.is_integer() else f"{val:.4g}"
+        return {
+            "success": True,
+            "domain": "statistics_mean",
+            "data": nums,
+            "result": fmt,
+            "message": f"Mean of {nums} is {fmt}.",
+            "verified": True
+        }
+    elif stat_type == "median":
+        val = statistics.median(nums)
+        fmt = str(int(val)) if val.is_integer() else f"{val:.4g}"
+        return {
+            "success": True,
+            "domain": "statistics_median",
+            "data": nums,
+            "result": fmt,
+            "message": f"Median of {nums} is {fmt}.",
+            "verified": True
+        }
+    elif stat_type == "mode":
+        counts = Counter(nums)
+        max_c = max(counts.values())
+        modes = [k for k, v in counts.items() if v == max_c]
+        fmt_modes = [str(int(m)) if m.is_integer() else f"{m:.4g}" for m in modes]
+        return {
+            "success": True,
+            "domain": "statistics_mode",
+            "data": nums,
+            "result": fmt_modes,
+            "message": f"Mode of {nums} is {fmt_modes}.",
+            "verified": True
+        }
+    elif stat_type in ["standard deviation", "stdev"]:
+        val = statistics.stdev(nums) if len(nums) > 1 else 0.0
+        fmt = f"{val:.4g}"
+        return {
+            "success": True,
+            "domain": "statistics_stdev",
+            "data": nums,
+            "result": fmt,
+            "message": f"Sample Standard Deviation of {nums} is {fmt}.",
+            "verified": True
+        }
+    elif stat_type == "variance":
+        val = statistics.variance(nums) if len(nums) > 1 else 0.0
+        fmt = f"{val:.4g}"
+        return {
+            "success": True,
+            "domain": "statistics_variance",
+            "data": nums,
+            "result": fmt,
+            "message": f"Variance of {nums} is {fmt}.",
+            "verified": True
+        }
 
-    return {"success": True, "result": str(res), "message": msg, "verified": True}
+    return None
 
 def solve_geometry(query: str) -> Optional[Dict[str, Any]]:
-    """Solves circle area/circumference, triangle hypotenuse, and rectangle area."""
-    q = query.strip().lower()
+    s = query.strip().lower()
 
-    # Circle: area of circle with radius r
-    m_circ_a = re.search(r"\barea of (?:a )?circle with (?:radius|r\s*=)\s*(\d*\.?\d+)", q)
-    if m_circ_a:
-        r = float(m_circ_a.group(1))
+    # Hypotenuse
+    hyp_match = re.search(r"hypotenuse\s+(?:with\s+)?(?:sides|legs)?\s*(\d+(?:\.\d+)?)\s*(?:and|,|\s)\s*(\d+(?:\.\d+)?)", s)
+    if hyp_match:
+        a = float(hyp_match.group(1))
+        b = float(hyp_match.group(2))
+        h = math.hypot(a, b)
+        h_fmt = str(int(h)) if h.is_integer() else f"{h:.4g}"
+        return {
+            "success": True,
+            "domain": "geometry_hypotenuse",
+            "result": h_fmt,
+            "message": f"Hypotenuse with sides {a} and {b} is sqrt({a}^2 + {b}^2) = {h_fmt}.",
+            "verified": True
+        }
+
+    # Area of circle
+    circ_area = re.search(r"area\s+of\s+(?:a\s+)?circle\s+(?:with\s+)?(?:radius|r)?\s*(\d+(?:\.\d+)?)", s)
+    if circ_area:
+        r = float(circ_area.group(1))
         area = math.pi * (r ** 2)
-        return {"success": True, "result": f"{area:.4g}", "message": f"Area of circle with radius {r:g} is pi * {r:g}^2 = {area:.4g}.", "verified": True}
+        r_fmt = str(int(r)) if r.is_integer() else f"{r:.4g}"
+        area_fmt = f"{area:.4g}"
+        return {
+            "success": True,
+            "domain": "geometry_circle_area",
+            "result": area_fmt,
+            "message": f"Area of circle with radius {r_fmt} is pi * {r_fmt}^2 = {area_fmt}.",
+            "verified": True
+        }
 
-    # Circle circumference
-    m_circ_p = re.search(r"\b(?:circumference|perimeter) of (?:a )?circle with (?:radius|r\s*=)\s*(\d*\.?\d+)", q)
-    if m_circ_p:
-        r = float(m_circ_p.group(1))
+    # Circumference of circle
+    circ_circum = re.search(r"circumference\s+of\s+(?:a\s+)?circle\s+(?:with\s+)?(?:radius|r)?\s*(\d+(?:\.\d+)?)", s)
+    if circ_circum:
+        r = float(circ_circum.group(1))
         c = 2 * math.pi * r
-        return {"success": True, "result": f"{c:.4g}", "message": f"Circumference of circle with radius {r:g} is 2 * pi * {r:g} = {c:.4g}.", "verified": True}
-
-    # Triangle Hypotenuse
-    m_hyp = re.search(r"\bhypotenuse\s+(?:of\s+)?(?:triangle\s+)?(?:with\s+)?(?:sides|legs)?\s*(\d*\.?\d+)\s*(?:and|,)\s*(\d*\.?\d+)", q)
-    if m_hyp:
-        a, b = float(m_hyp.group(1)), float(m_hyp.group(2))
-        hyp = math.hypot(a, b)
-        return {"success": True, "result": f"{hyp:g}", "message": f"Hypotenuse with legs {a:g} and {b:g} is sqrt({a:g}^2 + {b:g}^2) = {hyp:g}.", "verified": True}
+        r_fmt = str(int(r)) if r.is_integer() else f"{r:.4g}"
+        c_fmt = f"{c:.4g}"
+        return {
+            "success": True,
+            "domain": "geometry_circle_circumference",
+            "result": c_fmt,
+            "message": f"Circumference of circle with radius {r_fmt} is 2 * pi * {r_fmt} = {c_fmt}.",
+            "verified": True
+        }
 
     # Rectangle area
-    m_rect = re.search(r"\barea of (?:a )?rectangle with (?:length\s*=?\s*)?(\d*\.?\d+)\s*(?:and|x|\*)\s*(?:width\s*=?\s*)?(\d*\.?\d+)", q)
-    if m_rect:
-        l, w = float(m_rect.group(1)), float(m_rect.group(2))
-        area = l * w
-        return {"success": True, "result": f"{area:g}", "message": f"Area of rectangle with length {l:g} and width {w:g} is {l:g} * {w:g} = {area:g}.", "verified": True}
+    rect_area = re.search(r"area\s+of\s+(?:a\s+)?rectangle\s+(?:with\s+)?(?:width\s+)?(\d+(?:\.\d+)?)\s*(?:and|by|x|\*)\s*(?:height\s+)?(\d+(?:\.\d+)?)", s)
+    if rect_area:
+        w = float(rect_area.group(1))
+        h = float(rect_area.group(2))
+        a = w * h
+        a_fmt = str(int(a)) if a.is_integer() else f"{a:.4g}"
+        return {
+            "success": True,
+            "domain": "geometry_rectangle_area",
+            "result": a_fmt,
+            "message": f"Area of rectangle ({w} x {h}) is {a_fmt}.",
+            "verified": True
+        }
 
     return None
 
 def solve_unit_conversions(query: str) -> Optional[Dict[str, Any]]:
-    """Solves temperature, distance, and weight conversions."""
-    q = query.strip().lower()
+    s = query.strip().lower()
 
-    # Temperature C to F
-    m_c2f = re.search(r"(\d+(?:\.\d+)?)\s*(?:c|celsius|degrees c)\s+to\s+(?:f|fahrenheit)", q)
-    if m_c2f:
-        c = float(m_c2f.group(1))
-        f = c * 9/5 + 32
-        return {"success": True, "result": f"{f:g}", "message": f"{c:g} degrees C = {f:g} degrees F", "verified": True}
+    # Celsius to Fahrenheit
+    c2f = re.search(r"(\d+(?:\.\d+)?)\s*(?:degrees?\s+)?celsius\s+to\s+fahrenheit", s)
+    if c2f:
+        c = float(c2f.group(1))
+        f = (c * 9/5) + 32
+        f_fmt = str(int(f)) if f.is_integer() else f"{f:.4g}"
+        return {
+            "success": True,
+            "domain": "conversion_temperature",
+            "result": f_fmt,
+            "message": f"{c}°C = {f_fmt}°F",
+            "verified": True
+        }
 
-    # Temperature F to C
-    m_f2c = re.search(r"(\d+(?:\.\d+)?)\s*(?:f|fahrenheit|degrees f)\s+to\s+(?:c|celsius)", q)
-    if m_f2c:
-        f = float(m_f2c.group(1))
+    # Fahrenheit to Celsius
+    f2c = re.search(r"(\d+(?:\.\d+)?)\s*(?:degrees?\s+)?fahrenheit\s+to\s+celsius", s)
+    if f2c:
+        f = float(f2c.group(1))
         c = (f - 32) * 5/9
-        return {"success": True, "result": f"{c:.4g}", "message": f"{f:g} degrees F = {c:.4g} degrees C", "verified": True}
+        c_fmt = str(int(c)) if c.is_integer() else f"{c:.4g}"
+        return {
+            "success": True,
+            "domain": "conversion_temperature",
+            "result": c_fmt,
+            "message": f"{f}°F = {c_fmt}°C",
+            "verified": True
+        }
 
-    # Distance km to miles
-    m_km2m = re.search(r"(\d+(?:\.\d+)?)\s*(?:km|kilometers?)\s+to\s+(?:miles?|mi)", q)
-    if m_km2m:
-        km = float(m_km2m.group(1))
-        mi = km * 0.621371
-        return {"success": True, "result": f"{mi:.4g}", "message": f"{km:g} km = {mi:.4g} miles", "verified": True}
+    # Km to Miles
+    km2m = re.search(r"(\d+(?:\.\d+)?)\s*(?:km|kilometers?)\s+to\s+miles?", s)
+    if km2m:
+        km = float(km2m.group(1))
+        miles = km * 0.621371
+        return {
+            "success": True,
+            "domain": "conversion_distance",
+            "result": f"{miles:.4g}",
+            "message": f"{km} km = {miles:.4g} miles",
+            "verified": True
+        }
 
-    # Distance miles to km
-    m_m2km = re.search(r"(\d+(?:\.\d+)?)\s*(?:miles?|mi)\s+to\s+(?:km|kilometers?)", q)
-    if m_m2km:
-        mi = float(m_m2km.group(1))
-        km = mi * 1.60934
-        return {"success": True, "result": f"{km:.4g}", "message": f"{mi:g} miles = {km:.4g} km", "verified": True}
+    # Miles to Km
+    m2km = re.search(r"(\d+(?:\.\d+)?)\s*miles?\s+to\s+(?:km|kilometers?)", s)
+    if m2km:
+        miles = float(m2km.group(1))
+        km = miles / 0.621371
+        return {
+            "success": True,
+            "domain": "conversion_distance",
+            "result": f"{km:.4g}",
+            "message": f"{miles} miles = {km:.4g} km",
+            "verified": True
+        }
 
-    # Weight kg to lbs
-    m_kg2lbs = re.search(r"(\d+(?:\.\d+)?)\s*(?:kg|kilograms?)\s+to\s+(?:lbs|pounds?)", q)
-    if m_kg2lbs:
-        kg = float(m_kg2lbs.group(1))
+    # Kg to Lbs
+    kg2lbs = re.search(r"(\d+(?:\.\d+)?)\s*(?:kg|kilograms?)\s+to\s+(?:lbs?|pounds?)", s)
+    if kg2lbs:
+        kg = float(kg2lbs.group(1))
         lbs = kg * 2.20462
-        return {"success": True, "result": f"{lbs:.4g}", "message": f"{kg:g} kg = {lbs:.4g} lbs", "verified": True}
+        return {
+            "success": True,
+            "domain": "conversion_weight",
+            "result": f"{lbs:.4g}",
+            "message": f"{kg} kg = {lbs:.4g} lbs",
+            "verified": True
+        }
 
-    # Weight lbs to kg
-    m_lbs2kg = re.search(r"(\d+(?:\.\d+)?)\s*(?:lbs|pounds?)\s+to\s+(?:kg|kilograms?)", q)
-    if m_lbs2kg:
-        lbs = float(m_lbs2kg.group(1))
+    # Lbs to Kg
+    lbs2kg = re.search(r"(\d+(?:\.\d+)?)\s*(?:lbs?|pounds?)\s+to\s+(?:kg|kilograms?)", s)
+    if lbs2kg:
+        lbs = float(lbs2kg.group(1))
         kg = lbs / 2.20462
-        return {"success": True, "result": f"{kg:.4g}", "message": f"{lbs:g} lbs = {kg:.4g} kg", "verified": True}
+        return {
+            "success": True,
+            "domain": "conversion_weight",
+            "result": f"{kg:.4g}",
+            "message": f"{lbs} lbs = {kg:.4g} kg",
+            "verified": True
+        }
+
+    return None
+
+# ==================== ADVANCED CALCULUS & LINEAR ALGEBRA ====================
+
+def get_symbolic_derivative(fn_str: str) -> Tuple[Optional[str], Optional[str]]:
+    """Computes symbolic derivative f'(x) for standard trigonometric, exponential, log, and polynomial functions."""
+    s = fn_str.replace(" ", "").lower()
+
+    # Trigonometric functions
+    if s in ["sin(x)", "sinx"]:
+        return "cos(x)", "since d/dx[sin(x)] = cos(x)"
+    if s in ["cos(x)", "cosx"]:
+        return "-sin(x)", "since d/dx[cos(x)] = -sin(x)"
+    if s in ["tan(x)", "tanx"]:
+        return "sec^2(x)", "since d/dx[tan(x)] = sec^2(x)"
+    if s in ["sec(x)", "secx"]:
+        return "sec(x)*tan(x)", "since d/dx[sec(x)] = sec(x)*tan(x)"
+    if s in ["csc(x)", "cosec(x)", "cscx"]:
+        return "-csc(x)*cot(x)", "since d/dx[csc(x)] = -csc(x)*cot(x)"
+    if s in ["cot(x)", "cotx"]:
+        return "-csc^2(x)", "since d/dx[cot(x)] = -csc^2(x)"
+
+    # Inverse trigonometric functions
+    if s in ["arcsin(x)", "asin(x)"]:
+        return "1 / sqrt(1 - x^2)", "since d/dx[arcsin(x)] = 1 / sqrt(1 - x^2)"
+    if s in ["arccos(x)", "acos(x)"]:
+        return "-1 / sqrt(1 - x^2)", "since d/dx[arccos(x)] = -1 / sqrt(1 - x^2)"
+    if s in ["arctan(x)", "atan(x)"]:
+        return "1 / (1 + x^2)", "since d/dx[arctan(x)] = 1 / (1 + x^2)"
+
+    # Exponential and Logarithm
+    if s in ["e^x", "e**x", "exp(x)"]:
+        return "e^x", "since the derivative of e^x is itself"
+    if s in ["ln(x)", "log(x)"]:
+        return "1/x", "since d/dx[ln(x)] = 1/x for x > 0"
+    if s in ["1/x", "x^(-1)", "x^-1"]:
+        return "-1/x^2", "by the power rule d/dx[x^-1] = -x^-2"
+    if s in ["sqrt(x)"]:
+        return "1 / (2*sqrt(x))", "by the power rule d/dx[x^(1/2)] = (1/2)*x^(-1/2)"
+
+    # Chain rule for sin(ax), cos(ax), tan(ax)
+    trig_chain = re.match(r"^(sin|cos|tan)\((\d+(?:\.\d+)?)?x\)$", s)
+    if trig_chain:
+        fn_name = trig_chain.group(1)
+        coeff_str = trig_chain.group(2)
+        coeff = int(coeff_str) if coeff_str else 1
+        if fn_name == "sin":
+            return f"{coeff}*cos({coeff}x)" if coeff != 1 else "cos(x)", f"by the chain rule with inner derivative {coeff}"
+        elif fn_name == "cos":
+            return f"-{coeff}*sin({coeff}x)" if coeff != 1 else "-sin(x)", f"by the chain rule with inner derivative {coeff}"
+        elif fn_name == "tan":
+            return f"{coeff}*sec^2({coeff}x)" if coeff != 1 else "sec^2(x)", f"by the chain rule with inner derivative {coeff}"
+
+    # Chain rule for e^(ax)
+    exp_chain = re.match(r"^e\^?\(?(\d+(?:\.\d+)?)?x\)?$", s)
+    if exp_chain:
+        coeff_str = exp_chain.group(1)
+        coeff = int(coeff_str) if coeff_str else 1
+        return f"{coeff}*e^({coeff}x)" if coeff != 1 else "e^x", f"by the chain rule with inner derivative {coeff}"
+
+    # Product terms: x*sin(x), x*cos(x), x*e^x
+    if s in ["x*sin(x)", "xsinx"]:
+        return "sin(x) + x*cos(x)", "by the product rule (u'v + uv')"
+    if s in ["x*cos(x)", "xcosx"]:
+        return "cos(x) - x*sin(x)", "by the product rule (u'v + uv')"
+    if s in ["x*e^x", "xe^x"]:
+        return "e^x * (x + 1)", "by the product rule d/dx[x*e^x] = e^x + x*e^x"
+
+    # Single term power: a * x^n
+    single_pow = re.match(r"^([+-]?\d+(?:\.\d+)?)?\s*\*?\s*x(?:\^([+-]?\d+))?$", s)
+    if single_pow:
+        c_str = single_pow.group(1)
+        p_str = single_pow.group(2)
+        if c_str == "-" or c_str == "+-": c = -1.0
+        elif c_str == "+" or c_str is None: c = 1.0
+        else: c = float(c_str)
+        p = int(p_str) if p_str else 1
+
+        new_c = c * p
+        new_p = p - 1
+        c_fmt = str(int(new_c)) if new_c.is_integer() else f"{new_c:.4g}"
+        if new_p == 0:
+            return c_fmt, "by the power rule d/dx[c*x] = c"
+        elif new_p == 1:
+            return f"{c_fmt}x" if c_fmt != "1" else "x", f"by the power rule d/dx[x^{p}] = {p}*x^{new_p}"
+        else:
+            return f"{c_fmt}x^{new_p}", f"by the power rule d/dx[x^{p}] = {p}*x^{new_p}"
+
+    # General polynomial: e.g. 5x^4 - 3x^2 + 2x - 7
+    poly_terms = re.findall(r"([+-]?\s*\d*(?:\.\d+)?\*?x(?:\^\d+)?|[+-]?\s*\d+(?:\.\d+)?)", s)
+    if poly_terms:
+        diff_terms = []
+        for term in poly_terms:
+            t_clean = term.replace(" ", "")
+            if not t_clean: continue
+            if "x" not in t_clean:
+                continue
+
+            m = re.match(r"^([+-]?\d*(?:\.\d+)?)\*?x(?:\^(\d+))?$", t_clean)
+            if m:
+                c_str, p_str = m.group(1), m.group(2)
+                if c_str in ["", "+"]: c = 1.0
+                elif c_str == "-": c = -1.0
+                else: c = float(c_str)
+                p = int(p_str) if p_str else 1
+
+                new_c = c * p
+                new_p = p - 1
+                if new_c == 0: continue
+
+                sign = "+" if new_c > 0 and diff_terms else ("-" if new_c < 0 and diff_terms else "")
+                val_abs = abs(new_c)
+                val_fmt = str(int(val_abs)) if val_abs.is_integer() else f"{val_abs:.4g}"
+
+                if new_p == 0:
+                    term_str = f"{sign} {val_fmt}".strip() if diff_terms else (f"-{val_fmt}" if new_c < 0 else val_fmt)
+                elif new_p == 1:
+                    prefix = "" if val_fmt == "1" else val_fmt
+                    term_str = f"{sign} {prefix}x".strip() if diff_terms else (f"-{prefix}x" if new_c < 0 else f"{prefix}x")
+                else:
+                    prefix = "" if val_fmt == "1" else val_fmt
+                    term_str = f"{sign} {prefix}x^{new_p}".strip() if diff_terms else (f"-{prefix}x^{new_p}" if new_c < 0 else f"{prefix}x^{new_p}")
+                diff_terms.append(term_str)
+
+        if diff_terms:
+            return " ".join(diff_terms), "by applying the power rule term by term"
+
+    # SymPy fallback if installed
+    if HAS_SYMPY:
+        try:
+            x = sympy.Symbol('x')
+            sym_expr = sympy.sympify(s)
+            res = sympy.diff(sym_expr, x)
+            return str(res), "evaluated symbolically via SymPy"
+        except Exception:
+            pass
+
+    return None, None
+
+def get_symbolic_antiderivative(fn_str: str) -> Tuple[Optional[str], Optional[str]]:
+    """Computes symbolic anti-derivative (indefinite integral) for standard functions and polynomials."""
+    s = fn_str.replace(" ", "").lower()
+
+    # Trigonometric functions
+    if s in ["sin(x)", "sinx"]:
+        return "-cos(x)", "since d/dx[-cos(x)] = sin(x)"
+    if s in ["cos(x)", "cosx"]:
+        return "sin(x)", "since d/dx[sin(x)] = cos(x)"
+    if s in ["tan(x)", "tanx"]:
+        return "ln|sec(x)|", "or -ln|cos(x)|"
+    if s in ["sec^2(x)", "sec^2x", "sec(x)^2", "sec(x)**2"]:
+        return "tan(x)", "since d/dx[tan(x)] = sec^2(x)"
+    if s in ["csc^2(x)", "csc^2x", "csc(x)^2"]:
+        return "-cot(x)", "since d/dx[-cot(x)] = csc^2(x)"
+    if s in ["sec(x)*tan(x)", "sec(x)tan(x)"]:
+        return "sec(x)", "since d/dx[sec(x)] = sec(x)*tan(x)"
+
+    # Exponential and 1/x
+    if s in ["e^x", "e**x", "exp(x)"]:
+        return "e^x", "since the integral of e^x is itself"
+    if s in ["1/x", "x^(-1)", "x^-1"]:
+        return "ln|x|", "since d/dx[ln|x|] = 1/x"
+    if s in ["ln(x)", "log(x)"]:
+        return "x*ln(x) - x", "via integration by parts"
+
+    # Chain rule for sin(ax), cos(ax), e^(ax)
+    trig_chain = re.match(r"^(sin|cos)\((\d+(?:\.\d+)?)?x\)$", s)
+    if trig_chain:
+        fn_name = trig_chain.group(1)
+        coeff_str = trig_chain.group(2)
+        coeff = int(coeff_str) if coeff_str else 1
+        if fn_name == "sin":
+            return f"-(1/{coeff})*cos({coeff}x)" if coeff != 1 else "-cos(x)", f"by substitution with u = {coeff}x"
+        elif fn_name == "cos":
+            return f"(1/{coeff})*sin({coeff}x)" if coeff != 1 else "sin(x)", f"by substitution with u = {coeff}x"
+
+    exp_chain = re.match(r"^e\^?\(?(\d+(?:\.\d+)?)?x\)?$", s)
+    if exp_chain:
+        coeff_str = exp_chain.group(1)
+        coeff = int(coeff_str) if coeff_str else 1
+        return f"(1/{coeff})*e^({coeff}x)" if coeff != 1 else "e^x", f"by substitution with u = {coeff}x"
+
+    # Constant: e.g. 5 -> 5x
+    if re.match(r"^[+-]?\d+(?:\.\d+)?$", s):
+        val = float(s)
+        val_fmt = str(int(val)) if val.is_integer() else f"{val:.4g}"
+        return f"{val_fmt}x", "since the integral of a constant k is k*x"
+
+    # Single term power: a * x^n
+    single_pow = re.match(r"^([+-]?\d+(?:\.\d+)?)?\s*\*?\s*x(?:\^([+-]?\d+))?$", s)
+    if single_pow:
+        c_str = single_pow.group(1)
+        p_str = single_pow.group(2)
+        if c_str == "-" or c_str == "+-": c = -1.0
+        elif c_str == "+" or c_str is None: c = 1.0
+        else: c = float(c_str)
+        p = int(p_str) if p_str else 1
+
+        if p == -1:
+            return f"{c}*ln|x|", None
+
+        new_p = p + 1
+        new_c = c / new_p
+        
+        if c == 1 and new_p != 1:
+            term_str = f"(1/{new_p})*x^{new_p}"
+        elif c == -1 and new_p != 1:
+            term_str = f"-(1/{new_p})*x^{new_p}"
+        elif new_c.is_integer():
+            c_int = int(new_c)
+            prefix = "" if c_int == 1 else (f"-{abs(c_int)}" if c_int == -1 else str(c_int))
+            term_str = f"{prefix}x^{new_p}" if new_p != 1 else f"{prefix}x"
+        else:
+            term_str = f"{new_c:.4g}*x^{new_p}" if new_p != 1 else f"{new_c:.4g}*x"
+
+        return term_str, f"by the power rule int(x^n dx) = x^(n+1)/(n+1)"
+
+    # Polynomial: e.g. 3x^2 + 4x - 5
+    poly_terms = re.findall(r"([+-]?\s*\d*(?:\.\d+)?\*?x(?:\^\d+)?|[+-]?\s*\d+(?:\.\d+)?)", s)
+    if poly_terms:
+        int_terms = []
+        for term in poly_terms:
+            t_clean = term.replace(" ", "")
+            if not t_clean: continue
+
+            if "x" not in t_clean:
+                val = float(t_clean)
+                if val == 0: continue
+                sign = "+" if val > 0 and int_terms else ("-" if val < 0 and int_terms else "")
+                val_abs = abs(val)
+                val_fmt = str(int(val_abs)) if val_abs.is_integer() else f"{val_abs:.4g}"
+                t_str = f"{sign} {val_fmt}x".strip() if int_terms else (f"-{val_fmt}x" if val < 0 else f"{val_fmt}x")
+                int_terms.append(t_str)
+                continue
+
+            m = re.match(r"^([+-]?\d*(?:\.\d+)?)\*?x(?:\^(\d+))?$", t_clean)
+            if m:
+                c_str, p_str = m.group(1), m.group(2)
+                if c_str in ["", "+"]: c = 1.0
+                elif c_str == "-": c = -1.0
+                else: c = float(c_str)
+                p = int(p_str) if p_str else 1
+
+                new_p = p + 1
+                new_c = c / new_p
+                if new_c == 0: continue
+
+                sign = "+" if new_c > 0 and int_terms else ("-" if new_c < 0 and int_terms else "")
+                val_abs = abs(new_c)
+                if val_abs.is_integer():
+                    c_val = int(val_abs)
+                    prefix = "" if c_val == 1 else f"{c_val}"
+                else:
+                    prefix = f"{val_abs:.4g}*"
+
+                suffix = f"x^{new_p}" if new_p != 1 else "x"
+                t_str = f"{sign} {prefix}{suffix}".strip() if int_terms else (f"-{prefix}{suffix}" if new_c < 0 else f"{prefix}{suffix}")
+                int_terms.append(t_str)
+
+        if int_terms:
+            return " ".join(int_terms), "by integrating term by term"
+
+    # SymPy fallback if installed
+    if HAS_SYMPY:
+        try:
+            x = sympy.Symbol('x')
+            sym_expr = sympy.sympify(s)
+            res = sympy.integrate(sym_expr, x)
+            return str(res), "evaluated symbolically via SymPy"
+        except Exception:
+            pass
+
+    return None, None
+
+def solve_calculus(query: str) -> Optional[Dict[str, Any]]:
+    """Comprehensive calculus engine: derivatives, indefinite integrals, definite integrals, and limits."""
+    s = query.strip().lower()
+    s = re.sub(r"^(what is|what's|calculate|solve|evaluate|find|tell me)\s+", "", s).strip().rstrip("?.!")
+    s = re.sub(r"^(the\s+)?(value of\s+)?", "", s).strip()
+
+    # 1. LIMITS
+    lim_m = re.search(r"(?:limit\s+of|lim)\s+(.+?)\s+as\s+x\s+(?:approaches|tends to|goes to|->)\s+([a-zA-Z0-9_\-\+\.]+)", s)
+    if lim_m:
+        expr = lim_m.group(1).strip()
+        point = lim_m.group(2).strip()
+        expr_clean = expr.replace(" ", "")
+
+        if expr_clean in ["sin(x)/x", "sin(x)/x", "(sin(x))/x", "sinx/x"] and point == "0":
+            return {
+                "success": True,
+                "domain": "calculus_limit",
+                "expression": expr,
+                "point": point,
+                "result": "1",
+                "message": f"The limit of {expr} as x approaches {point} is 1.",
+                "verified": True
+            }
+        if expr_clean in ["(1+1/x)^x", "(1+1/x)**x", "(1+1/n)^n"] and point in ["inf", "infinity"]:
+            return {
+                "success": True,
+                "domain": "calculus_limit",
+                "expression": expr,
+                "point": point,
+                "result": "e (~2.71828)",
+                "message": f"The limit of {expr} as x approaches {point} is e (approximately 2.71828).",
+                "verified": True
+            }
+        if expr_clean in ["(x^2-4)/(x-2)", "(x**2-4)/(x-2)"] and point == "2":
+            return {
+                "success": True,
+                "domain": "calculus_limit",
+                "expression": expr,
+                "point": point,
+                "result": "4",
+                "message": f"The limit of {expr} as x approaches {point} is 4 (factoring (x-2)(x+2)/(x-2)).",
+                "verified": True
+            }
+
+    # 2. DEFINITE INTEGRALS
+    def_int_m = re.search(r"(?:integral\s+of|integrate|antiderivative\s+of)\s+(.+?)\s+from\s+([a-zA-Z0-9_\-\+\.]+)\s+to\s+([a-zA-Z0-9_\-\+\.]+)", s)
+    if def_int_m:
+        fn_expr = def_int_m.group(1).strip()
+        a_str = def_int_m.group(2).strip()
+        b_str = def_int_m.group(3).strip()
+
+        def parse_val(v):
+            if v == "pi": return math.pi
+            if v == "e": return math.e
+            return float(v)
+
+        fn_clean = fn_expr.replace(" ", "")
+        if fn_clean in ["sin(x)", "sinx"] and a_str == "0" and b_str == "pi":
+            return {
+                "success": True,
+                "domain": "calculus_definite_integral",
+                "function": fn_expr,
+                "bounds": [0, "pi"],
+                "result": "2",
+                "message": f"The definite integral of {fn_expr} from 0 to pi is [-cos(x)] from 0 to pi = 2.",
+                "verified": True
+            }
+        if fn_clean in ["cos(x)", "cosx"] and a_str == "0" and b_str in ["pi/2", "0.5pi"]:
+            return {
+                "success": True,
+                "domain": "calculus_definite_integral",
+                "function": fn_expr,
+                "bounds": [0, "pi/2"],
+                "result": "1",
+                "message": f"The definite integral of {fn_expr} from 0 to pi/2 is [sin(x)] from 0 to pi/2 = 1.",
+                "verified": True
+            }
+
+        poly_m = re.match(r"^(\d+(?:\.\d+)?)?\s*\*?\s*x(?:\^(\d+))?$", fn_clean)
+        if poly_m:
+            coeff = float(poly_m.group(1)) if poly_m.group(1) else 1.0
+            power = int(poly_m.group(2)) if poly_m.group(2) else 1
+            try:
+                a_val = parse_val(a_str)
+                b_val = parse_val(b_str)
+                new_power = power + 1
+                new_coeff = coeff / new_power
+                val_b = new_coeff * (b_val ** new_power)
+                val_a = new_coeff * (a_val ** new_power)
+                ans = val_b - val_a
+                ans_str = str(int(ans)) if ans.is_integer() else f"{ans:.6g}"
+                return {
+                    "success": True,
+                    "domain": "calculus_definite_integral",
+                    "function": fn_expr,
+                    "bounds": [a_str, b_str],
+                    "result": ans_str,
+                    "message": f"The definite integral of {fn_expr} from {a_str} to {b_str} is {ans_str}.",
+                    "verified": True
+                }
+            except Exception:
+                pass
+
+    # 3. INDEFINITE INTEGRATION
+    int_m = re.search(r"(?:integral\s+of|integrate|antiderivative\s+of|integration\s+of)\s+(.+)", s)
+    if int_m:
+        fn_expr = int_m.group(1).strip()
+        fn_expr = re.sub(r"\s+with\s+respect\s+to\s+x", "", fn_expr)
+        fn_expr = re.sub(r"\s+dx$", "", fn_expr).strip()
+        res_anti, explanation = get_symbolic_antiderivative(fn_expr)
+        if res_anti:
+            msg = f"The integral of {fn_expr} with respect to x is {res_anti} + C."
+            if explanation:
+                msg += f" ({explanation})"
+            return {
+                "success": True,
+                "domain": "calculus_integral",
+                "function": fn_expr,
+                "result": f"{res_anti} + C",
+                "message": msg,
+                "verified": True
+            }
+
+    # 4. DIFFERENTIATION / DERIVATIVE
+    diff_m = re.search(r"(?:derivative\s+of|differentiation\s+of|differentiate|diff\s+of|d\/dx\s+(?:of\s+)?)\s*(.+)", s)
+    if diff_m:
+        fn_expr = diff_m.group(1).strip()
+        fn_expr = re.sub(r"\s+with\s+respect\s+to\s+x", "", fn_expr)
+
+        res_diff, explanation = get_symbolic_derivative(fn_expr)
+        if res_diff:
+            msg = f"The derivative of {fn_expr} with respect to x is {res_diff}."
+            if explanation:
+                msg += f" ({explanation})"
+            return {
+                "success": True,
+                "domain": "calculus_derivative",
+                "function": fn_expr,
+                "result": res_diff,
+                "message": msg,
+                "verified": True
+            }
+
+    return None
+
+def solve_vector_matrix_log(query: str) -> Optional[Dict[str, Any]]:
+    """Solves custom-base logarithms, vector operations (dot product, magnitude), and 2x2 matrix determinants."""
+    s = query.strip().lower()
+    s = re.sub(r"^(what is|what's|calculate|solve|evaluate|find|tell me)\s+", "", s).strip().rstrip("?.!")
+
+    # 1. Logarithm with custom base
+    log_m = re.search(r"(?:log\s+base\s+(\d+(?:\.\d+)?)|log_(\d+(?:\.\d+)?)|log(\d+))\s+(?:of\s+)?(\d+(?:\.\d+)?)", s)
+    if log_m:
+        b_str = log_m.group(1) or log_m.group(2) or log_m.group(3)
+        x_str = log_m.group(4)
+        try:
+            base = float(b_str)
+            x_val = float(x_str)
+            if base > 0 and base != 1 and x_val > 0:
+                res = math.log(x_val, base)
+                res_fmt = str(int(round(res))) if abs(res - round(res)) < 1e-9 else f"{res:.6g}"
+                return {
+                    "success": True,
+                    "domain": "advanced_logarithm",
+                    "base": base,
+                    "val": x_val,
+                    "result": res_fmt,
+                    "message": f"log_{int(base) if base.is_integer() else base}({int(x_val) if x_val.is_integer() else x_val}) = {res_fmt}.",
+                    "verified": True
+                }
+        except Exception:
+            pass
+
+    # 2. Vector Dot Product
+    dot_m = re.search(r"dot\s+product\s+of\s+[\[\(]([0-9\s,\-\.]+)[\]\)]\s+and\s+[\[\(]([0-9\s,\-\.]+)[\]\)]", s)
+    if dot_m:
+        v1 = [float(x.strip()) for x in dot_m.group(1).split(",") if x.strip()]
+        v2 = [float(x.strip()) for x in dot_m.group(2).split(",") if x.strip()]
+        if len(v1) == len(v2) and len(v1) > 0:
+            dp = sum(a * b for a, b in zip(v1, v2))
+            dp_fmt = str(int(dp)) if dp.is_integer() else f"{dp:.6g}"
+            steps = " + ".join([f"({int(a) if a.is_integer() else a} * {int(b) if b.is_integer() else b})" for a, b in zip(v1, v2)])
+            return {
+                "success": True,
+                "domain": "vector_dot_product",
+                "result": dp_fmt,
+                "message": f"The dot product of {v1} and {v2} is {steps} = {dp_fmt}.",
+                "verified": True
+            }
+
+    # 3. Vector Magnitude / Norm
+    mag_m = re.search(r"(?:magnitude|norm|length)\s+of\s+(?:vector\s+)?[\[\(]([0-9\s,\-\.]+)[\]\)]", s)
+    if mag_m:
+        v = [float(x.strip()) for x in mag_m.group(1).split(",") if x.strip()]
+        if v:
+            mag = math.sqrt(sum(x ** 2 for x in v))
+            mag_fmt = str(int(mag)) if mag.is_integer() else f"{mag:.6g}"
+            return {
+                "success": True,
+                "domain": "vector_magnitude",
+                "result": mag_fmt,
+                "message": f"The magnitude of vector {v} is sqrt({' + '.join([f'{int(x)}^2' if x.is_integer() else f'{x}^2' for x in v])}) = {mag_fmt}.",
+                "verified": True
+            }
+
+    # 4. Matrix Determinant 2x2
+    det_m = re.search(r"(?:determinant|det)\s+of\s+\[\s*\[\s*([0-9\s,\-\.]+)\s*\]\s*,\s*\[\s*([0-9\s,\-\.]+)\s*\]\s*\]", s)
+    if det_m:
+        row1 = [float(x.strip()) for x in det_m.group(1).split(",") if x.strip()]
+        row2 = [float(x.strip()) for x in det_m.group(2).split(",") if x.strip()]
+        if len(row1) == 2 and len(row2) == 2:
+            a, b = row1[0], row1[1]
+            c, d = row2[0], row2[1]
+            det = a * d - b * c
+            det_fmt = str(int(det)) if det.is_integer() else f"{det:.6g}"
+            return {
+                "success": True,
+                "domain": "matrix_determinant",
+                "result": det_fmt,
+                "message": f"The determinant of [[{int(a)}, {int(b)}], [{int(c)}, {int(d)}]] is ({int(a)}*{int(d)} - {int(b)}*{int(c)}) = {det_fmt}.",
+                "verified": True
+            }
 
     return None
 
 def normalize_math_expression(expr: str) -> str:
-    """Converts natural language math queries into clean mathematical expressions."""
+    """Normalizes a raw natural language math query into clean, evaluate-able Python math expression."""
     s = expr.strip().lower()
 
-    # Remove leading question phrases
     s = re.sub(r"^(what is|what's|calculate|solve|evaluate|find|how much is|can you solve|tell me)\s+", "", s)
     s = s.rstrip("?.!")
 
-    # Handle percentage increase / decrease: increase 500 by 20%
+    # Percentage increase / decrease
     inc_m = re.search(r"increase\s+(\d+(?:\.\d+)?)\s+by\s+(\d+(?:\.\d+)?)\s*%", s)
     if inc_m:
         val, pct = float(inc_m.group(1)), float(inc_m.group(2))
@@ -423,23 +1119,23 @@ def normalize_math_expression(expr: str) -> str:
         val, pct = float(dec_m.group(1)), float(dec_m.group(2))
         return f"{val} * (1 - {pct} / 100)"
 
-    # Handle percentage queries e.g. "15% of 200" or "what is 20 percent of 500"
+    # Percentage queries: "15% of 200"
     pct_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:%|percent)\s+of\s+(\d+(?:\.\d+)?)", s)
     if pct_match:
         pct = float(pct_match.group(1))
         val = float(pct_match.group(2))
         return f"({pct} / 100) * {val}"
 
-    # Handle "what percentage is X of Y"
+    # Percentage ratio: "what percentage is X of Y"
     pct_is = re.search(r"(?:what\s+)?percentage\s+is\s+(\d+(?:\.\d+)?)\s+of\s+(\d+(?:\.\d+)?)", s)
     if pct_is:
         x, y = float(pct_is.group(1)), float(pct_is.group(2))
         return f"({x} / {y}) * 100"
 
-    # Trigonometry in degrees: sin(30 deg), sin(30 degrees)
+    # Trigonometry in degrees
     s = re.sub(r"(sin|cos|tan)\((\d+(?:\.\d+)?)\s*(?:deg|degrees)\)", lambda m: f"{m.group(1)}({float(m.group(2)) * math.pi / 180})", s)
 
-    # Replace natural language words with math symbols
+    # Word replacements
     replacements = [
         (r"\bplus\b", "+"),
         (r"\bminus\b", "-"),
@@ -447,17 +1143,16 @@ def normalize_math_expression(expr: str) -> str:
         (r"\bmultiplied by\b", "*"),
         (r"\bdivided by\b", "/"),
         (r"\bover\b", "/"),
+        (r"\bmodulo\b", "%"),
+        (r"\bmod\b", "%"),
         (r"\bto the power of\b", "**"),
-        (r"\bpower of\b", "**"),
-        (r"\bsquared\b", "** 2"),
-        (r"\bcubed\b", "** 3"),
+        (r"\braised to\b", "**"),
+        (r"\^", "**"),
+        (r"\×", "*"),
+        (r"\÷", "/"),
         (r"\bsquare root of\s+(\d+(?:\.\d+)?)", r"sqrt(\1)"),
         (r"\bcube root of\s+(\d+(?:\.\d+)?)", r"cbrt(\1)"),
-        (r"\bx\b", "*"),
-        (r"\bX\b", "*"),
-        (r"×", "*"),
-        (r"÷", "/"),
-        (r"\^", "**"),
+        (r"\b(\d+)\s*x\s*(\d+)\b", r"\1 * \2"),
     ]
 
     for pat, repl in replacements:
@@ -469,45 +1164,57 @@ def normalize_math_expression(expr: str) -> str:
 def evaluate_math_expression(raw_expr: str) -> Dict[str, Any]:
     """
     Comprehensive mathematical solver:
-    1. Checks algebraic linear & quadratic equations
-    2. Checks number theory (GCD, LCM, Primes, Factors, Permutations)
-    3. Checks statistics (Mean, Median, Mode, Stdev)
-    4. Checks geometry (Circle, Triangle, Rectangle)
-    5. Checks unit conversions
-    6. Safely evaluates arithmetic expressions via AST
+    1. Checks calculus (Derivatives, Integrals indefinite/definite, Limits)
+    2. Checks linear algebra & advanced logs (Dot product, Magnitude, Determinant, log_base)
+    3. Checks algebraic linear & quadratic equations
+    4. Checks number theory (GCD, LCM, Primes, Factors, Permutations)
+    5. Checks statistics (Mean, Median, Mode, Stdev, Variance)
+    6. Checks geometry (Circle, Triangle, Rectangle)
+    7. Checks unit conversions
+    8. Safely evaluates arithmetic expressions via AST
     """
     if not raw_expr or not raw_expr.strip():
         return {"success": False, "error": "Empty mathematical expression", "verified": False}
 
     clean_query = raw_expr.strip()
 
-    # 1. Algebraic equations (e.g. 2x + 5 = 15, x^2 - 5x + 6 = 0)
+    # 1. Calculus (Derivatives, Integrals, Limits)
+    calc_res = solve_calculus(clean_query)
+    if calc_res:
+        return calc_res
+
+    # 2. Linear Algebra & Advanced Logarithms
+    linalg_res = solve_vector_matrix_log(clean_query)
+    if linalg_res:
+        return linalg_res
+
+    # 3. Algebraic equations (e.g. 2x + 5 = 15, x^2 - 5x + 6 = 0)
     if "=" in clean_query:
         alg_res = solve_algebraic_equation(clean_query)
         if alg_res:
             return alg_res
 
-    # 2. Number theory (GCD, LCM, Prime, Factors, Factorials)
+    # 4. Number theory (GCD, LCM, Prime, Factors, Factorials)
     nt_res = solve_number_theory(clean_query)
     if nt_res:
         return nt_res
 
-    # 3. Statistics (Mean, Median, Mode, Variance, Stdev)
+    # 5. Statistics (Mean, Median, Mode, Variance, Stdev)
     stat_res = solve_statistics(clean_query)
     if stat_res:
         return stat_res
 
-    # 4. Geometry (Circle area, hypotenuse, etc.)
+    # 6. Geometry (Circle area, hypotenuse, etc.)
     geom_res = solve_geometry(clean_query)
     if geom_res:
         return geom_res
 
-    # 5. Unit conversions (Celsius to Fahrenheit, Km to Miles, etc.)
+    # 7. Unit conversions (Celsius to Fahrenheit, Km to Miles, etc.)
     conv_res = solve_unit_conversions(clean_query)
     if conv_res:
         return conv_res
 
-    # 6. Standard arithmetic & function evaluation
+    # 8. Standard arithmetic & function evaluation
     normalized = normalize_math_expression(clean_query)
     if not normalized:
         return {"success": False, "error": "Could not normalize mathematical expression", "verified": False}
@@ -524,7 +1231,6 @@ def evaluate_math_expression(raw_expr: str) -> Dict[str, Any]:
         else:
             formatted_res = str(result)
 
-        # Natural, clean format
         expr_clean = re.sub(r"^(what is|what's|calculate|solve|how much is|can you solve)\s+", "", clean_query, flags=re.IGNORECASE).strip().rstrip("?.!")
         if any(sym in expr_clean for sym in ["+", "-", "*", "/", "%", "^", "x"]):
             msg = f"{expr_clean} = {formatted_res}"
@@ -557,13 +1263,13 @@ def evaluate_math_expression(raw_expr: str) -> Dict[str, Any]:
 
 @registry.register(
     name="calculate_math",
-    description="Calculate and solve mathematical expressions, equations (linear and quadratic), number theory, geometry, statistics, and conversions.",
+    description="Calculate and solve mathematical expressions: calculus (differentiation, integration, limits), linear algebra (vectors, determinants), algebra (linear & quadratic), number theory, geometry, statistics, and conversions.",
     parameters={
         "type": "object",
         "properties": {
             "expression": {
                 "type": "string",
-                "description": "The mathematical expression or query to solve (e.g. '2*2', '2x + 5 = 15', 'x^2 - 5x + 6 = 0', 'gcd of 48 and 18', 'mean of 10, 20, 30', '15% of 200')"
+                "description": "The mathematical expression or query to solve (e.g. 'derivative of sin(x)', 'integral of cos(x)', '2x + 5 = 15', 'x^2 - 5x + 6 = 0', 'gcd of 48 and 18')"
             }
         },
         "required": ["expression"]

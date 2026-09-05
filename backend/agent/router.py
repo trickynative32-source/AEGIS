@@ -227,6 +227,8 @@ class FastDeterministicRouter:
             re.search(r"\b(area of (a |the )?(circle|rectangle|triangle)|circumference of (a |the )?circle)\b", t) or
             re.search(r"\b(celsius to fahrenheit|fahrenheit to celsius|km to miles|miles to km|kg to lbs|lbs to kg)\b", t) or
             re.search(r"\b(increase|decrease)\s+\d+(\.\d+)?\s*%\b", t) or
+            re.search(r"\b(derivative|differentiate|differentiation|diff\b|integral|integrate|integration|antiderivative|calculus|d\/dx|limit of|lim\s+x)\b", t) or
+            re.search(r"\b(dot product|vector|magnitude of|determinant|det of|matrix|log base|log_\d+|log2\b|log10\b)\b", t) or
             re.search(r"(\b[a-z]\b|\d+).*=.*(\b[a-z]\b|\d+)", t) or
             re.match(r"^[\d\s\+\-\*\/\(\)\.\^\%x=]+$", t)
         )

@@ -197,6 +197,60 @@ async def test_fast_router_advanced_math():
     assert res_circle["handled"] is True
     assert "153.9" in res_circle["response"]
 
+    # Calculus: Integration of sin x
+    res_int_sin = await router.route_and_execute("integral of sin x")
+    assert res_int_sin is not None
+    assert res_int_sin["handled"] is True
+    assert "-cos(x)" in res_int_sin["response"]
+
+    # Calculus: Integration of cos x
+    res_int_cos = await router.route_and_execute("integrate cos(x)")
+    assert res_int_cos is not None
+    assert res_int_cos["handled"] is True
+    assert "sin(x)" in res_int_cos["response"]
+
+    # Calculus: Differentiation of cos x
+    res_diff_cos = await router.route_and_execute("differentiation of cos x")
+    assert res_diff_cos is not None
+    assert res_diff_cos["handled"] is True
+    assert "-sin(x)" in res_diff_cos["response"]
+
+    # Calculus: Differentiation of sin x
+    res_diff_sin = await router.route_and_execute("derivative of sin(x)")
+    assert res_diff_sin is not None
+    assert res_diff_sin["handled"] is True
+    assert "cos(x)" in res_diff_sin["response"]
+
+    # Calculus: Polynomial derivative
+    res_diff_poly = await router.route_and_execute("derivative of x^3")
+    assert res_diff_poly is not None
+    assert res_diff_poly["handled"] is True
+    assert "3x^2" in res_diff_poly["response"]
+
+    # Calculus: Definite Integral
+    res_def_int = await router.route_and_execute("integrate x^2 from 0 to 3")
+    assert res_def_int is not None
+    assert res_def_int["handled"] is True
+    assert "9" in res_def_int["response"]
+
+    # Calculus: Limit
+    res_lim = await router.route_and_execute("limit of sin(x)/x as x approaches 0")
+    assert res_lim is not None
+    assert res_lim["handled"] is True
+    assert "1" in res_lim["response"]
+
+    # Linear Algebra: Dot Product & Custom Log
+    res_dot = await router.route_and_execute("dot product of [1, 2, 3] and [4, 5, 6]")
+    assert res_dot is not None
+    assert res_dot["handled"] is True
+    assert "32" in res_dot["response"]
+
+    res_log = await router.route_and_execute("log base 2 of 32")
+    assert res_log is not None
+    assert res_log["handled"] is True
+    assert "5" in res_log["response"]
+
+
 
 
 
