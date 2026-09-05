@@ -86,6 +86,11 @@ def test_stt_normalization():
     assert normalize_transcription_text("12/7 AM") == "12:07 AM"
     assert normalize_transcription_text("12/07AM") == "12:07 AM"
     assert normalize_transcription_text("5.30 PM") == "5:30 PM"
+    # Spoken math transcription tests
+    assert normalize_transcription_text("x squre") == "x^2"
+    assert normalize_transcription_text("3x square plus 5") == "3x^2 + 5"
+    assert normalize_transcription_text("x squared - 5x + 6 equals 0") == "x^2 - 5x + 6 = 0"
+    assert normalize_transcription_text("under root 144") == "sqrt(144)"
 
 def test_chat_math_multiplication():
     # Tests "2*2"
@@ -102,6 +107,15 @@ def test_chat_math_natural_expression():
     data = resp.json()
     assert "100" in data["response"]
     assert data["verified"] is True
+
+def test_chat_spoken_math_transcription_and_solving():
+    # Tests spoken math: "3x square plus 5 = 17" -> solved by AEGIS
+    resp = client.post("/api/chat", json={"text": "3x square plus 5 = 17", "is_voice": True})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "x = 2" in data["response"]
+    assert data["verified"] is True
+
 
 
 

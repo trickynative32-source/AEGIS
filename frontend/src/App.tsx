@@ -19,6 +19,46 @@ import { AuraCore } from './components/AuraCore';
 import { IntroModal } from './components/IntroModal';
 import { AuthModal, UserProfileData } from './components/AuthModal';
 
+export function normalizeSpeechText(text: string): string {
+  if (!text) return '';
+  let t = text.trim();
+
+  // 1. Time formats: 12/7 AM -> 12:07 AM, 5.30 PM -> 5:30 PM
+  t = t.replace(/\b(\d{1,2})[/.](\d{1,2})\s*(am|pm|AM|PM)\b/gi, (_, hh, mm, ap) => {
+    return `${hh}:${String(mm).padStart(2, '0')} ${ap.toUpperCase()}`;
+  });
+
+  // 2. Fix common STT math phonetic typos
+  t = t.replace(/\b(squre|squar|sqr)\b/gi, 'square');
+  t = t.replace(/\b(squred)\b/gi, 'squared');
+
+  // 3. Roots: "under root", "square root of", "cube root of"
+  t = t.replace(/\bunder\s*root\s*(?:of\s+)?(\d+|[a-zA-Z])\b/gi, 'sqrt($1)');
+  t = t.replace(/\bsquare\s*root\s*of\s+(\d+|[a-zA-Z])\b/gi, 'sqrt($1)');
+  t = t.replace(/\bcube\s*root\s*of\s+(\d+|[a-zA-Z])\b/gi, 'cbrt($1)');
+
+  // 4. Calculus: "d by dx" -> "d/dx"
+  t = t.replace(/\bd\s+by\s+d\s*x\b/gi, 'd/dx');
+
+  // 5. Powers: "x to the power of 4", "x raised to 3", "2 power 8"
+  t = t.replace(/(\b\d*[a-zA-Z]\b|\b\d+\b)\s*(?:to\s+the\s+power\s+(?:of\s+)?|power\s+|raised\s+to\s+(?:the\s+power\s+of\s+)?)\s*(\d+|[a-zA-Z])\b/gi, '$1^$2');
+
+  // 6. Squares: "x square", "3x square", "x squared" -> "x^2", "3x^2"
+  t = t.replace(/(\b\d*[a-zA-Z]\b|\b\d+\b)\s+(?:square|squared)\b/gi, '$1^2');
+
+  // 7. Cubes: "x cube", "3x cube" -> "x^3", "3x^3"
+  t = t.replace(/(\b\d*[a-zA-Z]\b|\b\d+\b)\s+(?:cube|cubed)\b/gi, '$1^3');
+
+  // 8. Spoken operators between terms: "3x^2 plus 5" -> "3x^2 + 5"
+  t = t.replace(/(?<=\S)\s+plus\s+(?=\S)/gi, ' + ');
+  t = t.replace(/(?<=\S)\s+minus\s+(?=\S)/gi, ' - ');
+  t = t.replace(/(?<=\S)\s+(?:multiplied\s+by|into|times)\s+(?=\S)/gi, ' * ');
+  t = t.replace(/(?<=\S)\s+divided\s+by\s+(?=\S)/gi, ' / ');
+  t = t.replace(/(?<=\S)\s+(?:is\s+equal\s+to|equals|equal\s+to)\s+(?=\S)/gi, ' = ');
+
+  return t.replace(/\s+/g, ' ').trim();
+}
+
 export const App: React.FC = () => {
   // Assistant States
   const [state, setState] = useState<AssistantState>('IDLE');
@@ -73,7 +113,7 @@ export const App: React.FC = () => {
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           transcript += event.results[i][0].transcript;
         }
-        setSpeechPreview(transcript);
+        setSpeechPreview(normalizeSpeechText(transcript));
       };
 
       rec.onerror = (e: any) => {
@@ -196,7 +236,8 @@ export const App: React.FC = () => {
     }
 
     if (speechPreview && speechPreview !== 'Listening...') {
-      wsService.sendMessage(speechPreview, true);
+      const cleanTranscript = normalizeSpeechText(speechPreview);
+      wsService.sendMessage(cleanTranscript, true);
     }
     setSpeechPreview('');
   };

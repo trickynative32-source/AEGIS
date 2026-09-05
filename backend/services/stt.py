@@ -10,7 +10,7 @@ from backend.config import settings
 logger = logging.getLogger("AEGIS.STT")
 
 def normalize_transcription_text(text: str) -> str:
-    """Cleans up transcription artifacts such as 12/7 AM -> 12:07 AM."""
+    """Cleans up transcription artifacts such as times (12/7 AM -> 12:07 AM) and spoken math (x square -> x^2, 3x square plus 5 -> 3x^2 + 5)."""
     if not text:
         return ""
     
@@ -35,6 +35,45 @@ def normalize_transcription_text(text: str) -> str:
         return m.group(0)
 
     t = re.sub(r'\b(\d{1,2})/(\d{1,2})\b', fix_slash_standalone, t)
+
+    # 2. Fix common spoken/phonetic math artifacts and typos
+    t = re.sub(r'\b(squre|squar|sqr)\b', 'square', t, flags=re.IGNORECASE)
+    t = re.sub(r'\b(squred)\b', 'squared', t, flags=re.IGNORECASE)
+
+    # Roots: "under root", "underroot", "square root of", "cube root of"
+    t = re.sub(r'\bunder\s*root\s*(?:of\s+)?(\d+|[a-zA-Z])\b', r'sqrt(\1)', t, flags=re.IGNORECASE)
+    t = re.sub(r'\bsquare\s*root\s*of\s+(\d+|[a-zA-Z])\b', r'sqrt(\1)', t, flags=re.IGNORECASE)
+    t = re.sub(r'\bcube\s*root\s*of\s+(\d+|[a-zA-Z])\b', r'cbrt(\1)', t, flags=re.IGNORECASE)
+
+    # Calculus: "d by dx" -> "d/dx"
+    t = re.sub(r'\bd\s+by\s+d\s*x\b', 'd/dx', t, flags=re.IGNORECASE)
+
+    # Powers: "x to the power of 4", "x raised to 3", "2 power 8"
+    t = re.sub(r'(\b\d*[a-zA-Z]\b|\b\d+\b)\s*(?:to\s+the\s+power\s+(?:of\s+)?|power\s+|raised\s+to\s+(?:the\s+power\s+of\s+)?)\s*(\d+|[a-zA-Z])\b', r'\1^\2', t, flags=re.IGNORECASE)
+
+    # Squares: "x square", "3x square", "x squared", "3x squared" -> "x^2", "3x^2"
+    t = re.sub(r'(\b\d*[a-zA-Z]\b|\b\d+\b)\s+(?:square|squared)\b', r'\1^2', t, flags=re.IGNORECASE)
+
+    # Cubes: "x cube", "3x cube", "x cubed" -> "x^3", "3x^3"
+    t = re.sub(r'(\b\d*[a-zA-Z]\b|\b\d+\b)\s+(?:cube|cubed)\b', r'\1^3', t, flags=re.IGNORECASE)
+
+    # Spoken operators between terms: "3x^2 plus 5" -> "3x^2 + 5"
+    operator_replacements = [
+        (r'(?<=\S)\s+plus\s+(?=\S)', ' + '),
+        (r'(?<=\S)\s+minus\s+(?=\S)', ' - '),
+        (r'(?<=\S)\s+(?:multiplied\s+by|into|times)\s+(?=\S)', ' * '),
+        (r'(?<=\S)\s+divided\s+by\s+(?=\S)', ' / '),
+        (r'(?<=\S)\s+(?:is\s+equal\s+to|equals|equal\s+to)\s+(?=\S)', ' = '),
+    ]
+    for pat, repl in operator_replacements:
+        t = re.sub(pat, repl, t, flags=re.IGNORECASE)
+
+    # Standalone math context conversions
+    if any(c in t for c in ['^', '=', 'x', 'y', '+', '-', '*', '/']) or re.search(r'\b(solve|calculate|evaluate|find)\b', t, re.IGNORECASE):
+        t = re.sub(r'\bplus\b', '+', t, flags=re.IGNORECASE)
+        t = re.sub(r'\bminus\b', '-', t, flags=re.IGNORECASE)
+        t = re.sub(r'\b(equals|equal to|is equal to)\b', '=', t, flags=re.IGNORECASE)
+
     t = re.sub(r'\s+', ' ', t).strip()
     return t
 

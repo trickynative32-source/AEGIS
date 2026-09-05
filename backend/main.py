@@ -34,7 +34,7 @@ from backend.services.neural_detector import neural_detector
 from backend.services.visual_memory import visual_memory_engine
 from backend.services.screen import screen_vision_service
 from backend.services.tts import tts_service
-from backend.services.stt import stt_service
+from backend.services.stt import stt_service, normalize_transcription_text
 from backend.services.scheduler import reminder_scheduler
 from backend.services.routine_learner import routine_learner
 from backend.services.memory import memory_store
@@ -121,7 +121,7 @@ app.add_middleware(
 
 # Core Orchestration Logic for User Messages (Optimized for Sub-Second Response)
 async def process_user_query(user_text: str, is_voice: bool = False) -> Dict[str, Any]:
-    clean_text = user_text.strip()
+    clean_text = normalize_transcription_text(user_text.strip()) if user_text else ""
     if not clean_text:
         return {"response": "I didn't catch that.", "verified": False}
 
