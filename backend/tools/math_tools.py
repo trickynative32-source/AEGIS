@@ -5,6 +5,7 @@ import re
 import logging
 import statistics
 from collections import Counter
+from fractions import Fraction
 from typing import Dict, Any, Union, Optional, Tuple, List
 from backend.tools.registry import registry
 
@@ -95,6 +96,32 @@ def safe_eval_ast(node: ast.AST) -> Union[int, float]:
         raise ValueError(f"Unsupported identifier: {node.id}")
     else:
         raise ValueError(f"Unsupported AST node type: {type(node)}")
+
+def format_coeff_power(c: float, p: int) -> str:
+    """Formats coefficient and power with exact integer/fraction representation."""
+    if p == 0:
+        if c.is_integer():
+            return str(int(c))
+        frac = Fraction(c).limit_denominator(100)
+        return f"{frac.numerator}/{frac.denominator}"
+
+    var_part = f"x^{p}" if p != 1 else "x"
+
+    if c == 1.0:
+        return var_part
+    elif c == -1.0:
+        return f"-{var_part}"
+
+    if c.is_integer():
+        return f"{int(c)}{var_part}"
+
+    frac = Fraction(c).limit_denominator(100)
+    if frac.numerator == 1:
+        return f"({var_part})/{frac.denominator}"
+    elif frac.numerator == -1:
+        return f"-({var_part})/{frac.denominator}"
+    else:
+        return f"({frac.numerator}/{frac.denominator}){var_part}"
 
 def parse_polynomial_side(side_str: str, var: str = "x") -> Tuple[float, float, float]:
     """Parses a polynomial side into coefficients (a*x^2, b*x, c)."""
@@ -741,102 +768,148 @@ def get_symbolic_derivative(fn_str: str) -> Tuple[Optional[str], Optional[str]]:
 
     return None, None
 
-def get_symbolic_antiderivative(fn_str: str) -> Tuple[Optional[str], Optional[str]]:
-    """Computes symbolic anti-derivative (indefinite integral) for standard functions and polynomials."""
-    s = fn_str.replace(" ", "").lower()
+def get_detailed_indefinite_integral(fn_str: str) -> Optional[Dict[str, Any]]:
+    """Computes exact symbolic antiderivative with step-by-step mathematical reasoning."""
+    s = fn_str.strip().lower()
+    s_clean = s.replace(" ", "")
 
-    # Trigonometric functions
-    if s in ["sin(x)", "sinx"]:
-        return "-cos(x)", "since d/dx[-cos(x)] = sin(x)"
-    if s in ["cos(x)", "cosx"]:
-        return "sin(x)", "since d/dx[sin(x)] = cos(x)"
-    if s in ["tan(x)", "tanx"]:
-        return "ln|sec(x)|", "or -ln|cos(x)|"
-    if s in ["sec^2(x)", "sec^2x", "sec(x)^2", "sec(x)**2"]:
-        return "tan(x)", "since d/dx[tan(x)] = sec^2(x)"
-    if s in ["csc^2(x)", "csc^2x", "csc(x)^2"]:
-        return "-cot(x)", "since d/dx[-cot(x)] = csc^2(x)"
-    if s in ["sec(x)*tan(x)", "sec(x)tan(x)"]:
-        return "sec(x)", "since d/dx[sec(x)] = sec(x)*tan(x)"
+    # 1. Standard special functions
+    special_cases = {
+        ("sin(x)", "sinx"): ("-cos(x)", "Standard trigonometric antiderivative: d/dx[-cos(x)] = sin(x)"),
+        ("cos(x)", "cosx"): ("sin(x)", "Standard trigonometric antiderivative: d/dx[sin(x)] = cos(x)"),
+        ("tan(x)", "tanx"): ("ln|sec(x)|", "Derived via substitution u = cos(x) or standard identity: ln|sec(x)| (or -ln|cos(x)|)"),
+        ("sec^2(x)", "sec^2x", "sec(x)^2", "sec(x)**2"): ("tan(x)", "Standard trigonometric antiderivative: d/dx[tan(x)] = sec^2(x)"),
+        ("csc^2(x)", "csc^2x", "csc(x)^2"): ("-cot(x)", "Standard trigonometric antiderivative: d/dx[-cot(x)] = csc^2(x)"),
+        ("sec(x)*tan(x)", "sec(x)tan(x)"): ("sec(x)", "Standard identity: d/dx[sec(x)] = sec(x)*tan(x)"),
+        ("e^x", "e**x", "exp(x)"): ("e^x", "The exponential function e^x is its own antiderivative"),
+        ("1/x", "x^(-1)", "x^-1"): ("ln|x|", "Standard logarithmic antiderivative for x != 0"),
+        ("ln(x)", "log(x)"): ("x*ln(x) - x", "Integration by parts: int(ln(x)) dx = x*ln(x) - int(x*(1/x)) dx = x*ln(x) - x"),
+        ("1/(1+x^2)", "1/(x^2+1)", "1/(1+x**2)"): ("arctan(x)", "Standard inverse trigonometric form: d/dx[arctan(x)] = 1/(1+x^2)"),
+        ("1/sqrt(1-x^2)", "1/sqrt(1-x**2)"): ("arcsin(x)", "Standard inverse trigonometric form: d/dx[arcsin(x)] = 1/sqrt(1-x^2)"),
+    }
 
-    # Exponential and 1/x
-    if s in ["e^x", "e**x", "exp(x)"]:
-        return "e^x", "since the integral of e^x is itself"
-    if s in ["1/x", "x^(-1)", "x^-1"]:
-        return "ln|x|", "since d/dx[ln|x|] = 1/x"
-    if s in ["ln(x)", "log(x)"]:
-        return "x*ln(x) - x", "via integration by parts"
+    for keys, (res, explanation) in special_cases.items():
+        if s_clean in keys:
+            message = (
+                f"The integral of {fn_str} with respect to x is:\n"
+                f"{res} + C\n\n"
+                f"Step-by-step solution:\n"
+                f"- {explanation}\n"
+                f"- Add constant of integration: + C"
+            )
+            return {
+                "success": True,
+                "domain": "calculus_integral",
+                "function": fn_str,
+                "result": f"{res} + C",
+                "steps": [explanation, "Add constant of integration: + C"],
+                "message": message,
+                "verified": True
+            }
 
-    # Chain rule for sin(ax), cos(ax), e^(ax)
-    trig_chain = re.match(r"^(sin|cos)\((\d+(?:\.\d+)?)?x\)$", s)
+    # 2. Linear argument substitution: sin(ax), cos(ax), e^(ax)
+    trig_chain = re.match(r"^(sin|cos)\((\d+(?:\.\d+)?)?x\)$", s_clean)
     if trig_chain:
         fn_name = trig_chain.group(1)
         coeff_str = trig_chain.group(2)
         coeff = int(coeff_str) if coeff_str else 1
         if fn_name == "sin":
-            return f"-(1/{coeff})*cos({coeff}x)" if coeff != 1 else "-cos(x)", f"by substitution with u = {coeff}x"
-        elif fn_name == "cos":
-            return f"(1/{coeff})*sin({coeff}x)" if coeff != 1 else "sin(x)", f"by substitution with u = {coeff}x"
+            res = f"-(1/{coeff})*cos({coeff}x)" if coeff != 1 else "-cos(x)"
+        else:
+            res = f"(1/{coeff})*sin({coeff}x)" if coeff != 1 else "sin(x)"
 
-    exp_chain = re.match(r"^e\^?\(?(\d+(?:\.\d+)?)?x\)?$", s)
+        step1 = f"Use u-substitution: let u = {coeff}x, then du = {coeff} dx (dx = du/{coeff})"
+        step2 = f"Substitute: int({fn_name}(u)) * (du/{coeff}) = (1/{coeff}) * {'(-cos(u))' if fn_name=='sin' else 'sin(u)'}"
+        step3 = f"Substitute back u = {coeff}x to obtain {res}"
+        message = (
+            f"The integral of {fn_str} with respect to x is:\n"
+            f"{res} + C\n\n"
+            f"Step-by-step solution:\n"
+            f"- {step1}\n"
+            f"- {step2}\n"
+            f"- {step3}\n"
+            f"- Add constant of integration: + C"
+        )
+        return {
+            "success": True,
+            "domain": "calculus_integral",
+            "function": fn_str,
+            "result": f"{res} + C",
+            "steps": [step1, step2, step3, "Add constant of integration: + C"],
+            "message": message,
+            "verified": True
+        }
+
+    exp_chain = re.match(r"^e\^?\(?(\d+(?:\.\d+)?)?x\)?$", s_clean)
     if exp_chain:
         coeff_str = exp_chain.group(1)
         coeff = int(coeff_str) if coeff_str else 1
-        return f"(1/{coeff})*e^({coeff}x)" if coeff != 1 else "e^x", f"by substitution with u = {coeff}x"
+        res = f"(1/{coeff})*e^({coeff}x)" if coeff != 1 else "e^x"
+        step1 = f"Use u-substitution: let u = {coeff}x, du = {coeff} dx (dx = du/{coeff})"
+        step2 = f"Substitute: (1/{coeff}) * int(e^u) du = (1/{coeff})*e^u"
+        step3 = f"Substitute back u = {coeff}x: {res}"
+        message = (
+            f"The integral of {fn_str} with respect to x is:\n"
+            f"{res} + C\n\n"
+            f"Step-by-step solution:\n"
+            f"- {step1}\n"
+            f"- {step2}\n"
+            f"- {step3}\n"
+            f"- Add constant of integration: + C"
+        )
+        return {
+            "success": True,
+            "domain": "calculus_integral",
+            "function": fn_str,
+            "result": f"{res} + C",
+            "steps": [step1, step2, step3, "Add constant of integration: + C"],
+            "message": message,
+            "verified": True
+        }
 
-    # Constant: e.g. 5 -> 5x
-    if re.match(r"^[+-]?\d+(?:\.\d+)?$", s):
-        val = float(s)
+    # 3. Constant
+    if re.match(r"^[+-]?\d+(?:\.\d+)?$", s_clean):
+        val = float(s_clean)
         val_fmt = str(int(val)) if val.is_integer() else f"{val:.4g}"
-        return f"{val_fmt}x", "since the integral of a constant k is k*x"
+        res = f"{val_fmt}x" if val_fmt != "1" else "x"
+        step = f"Constant rule: int(k) dx = k*x"
+        message = (
+            f"The integral of {fn_str} with respect to x is:\n"
+            f"{res} + C\n\n"
+            f"Step-by-step solution:\n"
+            f"- {step}\n"
+            f"- Add constant of integration: + C"
+        )
+        return {
+            "success": True,
+            "domain": "calculus_integral",
+            "function": fn_str,
+            "result": f"{res} + C",
+            "steps": [step, "Add constant of integration: + C"],
+            "message": message,
+            "verified": True
+        }
 
-    # Single term power: a * x^n
-    single_pow = re.match(r"^([+-]?\d+(?:\.\d+)?)?\s*\*?\s*x(?:\^([+-]?\d+))?$", s)
-    if single_pow:
-        c_str = single_pow.group(1)
-        p_str = single_pow.group(2)
-        if c_str == "-" or c_str == "+-": c = -1.0
-        elif c_str == "+" or c_str is None: c = 1.0
-        else: c = float(c_str)
-        p = int(p_str) if p_str else 1
-
-        if p == -1:
-            return f"{c}*ln|x|", None
-
-        new_p = p + 1
-        new_c = c / new_p
-        
-        if c == 1 and new_p != 1:
-            term_str = f"(1/{new_p})*x^{new_p}"
-        elif c == -1 and new_p != 1:
-            term_str = f"-(1/{new_p})*x^{new_p}"
-        elif new_c.is_integer():
-            c_int = int(new_c)
-            prefix = "" if c_int == 1 else (f"-{abs(c_int)}" if c_int == -1 else str(c_int))
-            term_str = f"{prefix}x^{new_p}" if new_p != 1 else f"{prefix}x"
-        else:
-            term_str = f"{new_c:.4g}*x^{new_p}" if new_p != 1 else f"{new_c:.4g}*x"
-
-        return term_str, f"by the power rule int(x^n dx) = x^(n+1)/(n+1)"
-
-    # Polynomial: e.g. 3x^2 + 4x - 5
-    poly_terms = re.findall(r"([+-]?\s*\d*(?:\.\d+)?\*?x(?:\^\d+)?|[+-]?\s*\d+(?:\.\d+)?)", s)
+    # 4. Polynomials (e.g. 3x^2 + 4x - 5, x^2, 5x^3)
+    poly_terms = re.findall(r"([+-]?\s*\d*(?:\.\d+)?\*?x(?:\^\d+)?|[+-]?\s*\d+(?:\.\d+)?)", s_clean)
     if poly_terms:
         int_terms = []
+        steps = []
         for term in poly_terms:
             t_clean = term.replace(" ", "")
             if not t_clean: continue
 
+            # Constant term
             if "x" not in t_clean:
                 val = float(t_clean)
                 if val == 0: continue
-                sign = "+" if val > 0 and int_terms else ("-" if val < 0 and int_terms else "")
-                val_abs = abs(val)
-                val_fmt = str(int(val_abs)) if val_abs.is_integer() else f"{val_abs:.4g}"
-                t_str = f"{sign} {val_fmt}x".strip() if int_terms else (f"-{val_fmt}x" if val < 0 else f"{val_fmt}x")
+                val_fmt = str(int(abs(val))) if val.is_integer() else f"{abs(val):.4g}"
+                t_str = f"+ {val_fmt}x" if val > 0 and int_terms else (f"- {val_fmt}x" if val < 0 and int_terms else (f"-{val_fmt}x" if val < 0 else f"{val_fmt}x"))
                 int_terms.append(t_str)
+                steps.append(f"Constant term {term}: int({val}) dx = {val_fmt}x (constant rule)")
                 continue
 
+            # Variable term
             m = re.match(r"^([+-]?\d*(?:\.\d+)?)\*?x(?:\^(\d+))?$", t_clean)
             if m:
                 c_str, p_str = m.group(1), m.group(2)
@@ -849,20 +922,35 @@ def get_symbolic_antiderivative(fn_str: str) -> Tuple[Optional[str], Optional[st
                 new_c = c / new_p
                 if new_c == 0: continue
 
-                sign = "+" if new_c > 0 and int_terms else ("-" if new_c < 0 and int_terms else "")
                 val_abs = abs(new_c)
-                if val_abs.is_integer():
-                    c_val = int(val_abs)
-                    prefix = "" if c_val == 1 else f"{c_val}"
-                else:
-                    prefix = f"{val_abs:.4g}*"
+                term_formatted = format_coeff_power(val_abs, new_p)
 
-                suffix = f"x^{new_p}" if new_p != 1 else "x"
-                t_str = f"{sign} {prefix}{suffix}".strip() if int_terms else (f"-{prefix}{suffix}" if new_c < 0 else f"{prefix}{suffix}")
-                int_terms.append(t_str)
+                if new_c > 0:
+                    sign_prefix = "+ " if int_terms else ""
+                else:
+                    sign_prefix = "- " if int_terms else "-"
+
+                int_terms.append(f"{sign_prefix}{term_formatted}")
+                steps.append(f"Power rule on {term}: int(x^{p}) dx gives ({c}/{new_p})*x^{new_p} = {term_formatted}")
 
         if int_terms:
-            return " ".join(int_terms), "by integrating term by term"
+            full_res = " ".join(int_terms)
+            message = (
+                f"The integral of {fn_str} with respect to x is:\n"
+                f"{full_res} + C\n\n"
+                f"Step-by-step solution:\n"
+                + "\n".join([f"- {st}" for st in steps]) + "\n"
+                f"- Combine integrated terms and add integration constant: + C"
+            )
+            return {
+                "success": True,
+                "domain": "calculus_integral",
+                "function": fn_str,
+                "result": f"{full_res} + C",
+                "steps": steps,
+                "message": message,
+                "verified": True
+            }
 
     # SymPy fallback if installed
     if HAS_SYMPY:
@@ -870,11 +958,105 @@ def get_symbolic_antiderivative(fn_str: str) -> Tuple[Optional[str], Optional[st
             x = sympy.Symbol('x')
             sym_expr = sympy.sympify(s)
             res = sympy.integrate(sym_expr, x)
-            return str(res), "evaluated symbolically via SymPy"
+            return {
+                "success": True,
+                "domain": "calculus_integral",
+                "function": fn_str,
+                "result": f"{res} + C",
+                "message": f"The integral of {fn_str} with respect to x is {res} + C (evaluated symbolically via SymPy).",
+                "verified": True
+            }
         except Exception:
             pass
 
-    return None, None
+    return None
+
+def get_detailed_definite_integral(fn_expr: str, a_str: str, b_str: str) -> Optional[Dict[str, Any]]:
+    """Evaluates definite integral with Fundamental Theorem of Calculus steps."""
+    def parse_val(v):
+        if v == "pi": return math.pi, "pi"
+        if v == "e": return math.e, "e"
+        return float(v), v
+
+    fn_clean = fn_expr.replace(" ", "").lower()
+
+    if fn_clean in ["sin(x)", "sinx"] and a_str == "0" and b_str == "pi":
+        return {
+            "success": True,
+            "domain": "calculus_definite_integral",
+            "function": fn_expr,
+            "bounds": [0, "pi"],
+            "result": "2",
+            "message": (
+                f"The definite integral of {fn_expr} from 0 to pi is 2.\n\n"
+                f"Step-by-step solution:\n"
+                f"1. Antiderivative: F(x) = -cos(x)\n"
+                f"2. Fundamental Theorem of Calculus: [F(x)] from 0 to pi = F(pi) - F(0)\n"
+                f"3. Evaluate at upper bound x = pi: F(pi) = -cos(pi) = -(-1) = 1\n"
+                f"4. Evaluate at lower bound x = 0: F(0) = -cos(0) = -(1) = -1\n"
+                f"5. Subtract: F(pi) - F(0) = 1 - (-1) = 2"
+            ),
+            "verified": True
+        }
+
+    if fn_clean in ["cos(x)", "cosx"] and a_str == "0" and b_str in ["pi/2", "0.5pi"]:
+        return {
+            "success": True,
+            "domain": "calculus_definite_integral",
+            "function": fn_expr,
+            "bounds": [0, "pi/2"],
+            "result": "1",
+            "message": (
+                f"The definite integral of {fn_expr} from 0 to pi/2 is 1.\n\n"
+                f"Step-by-step solution:\n"
+                f"1. Antiderivative: F(x) = sin(x)\n"
+                f"2. Fundamental Theorem of Calculus: [F(x)] from 0 to pi/2 = F(pi/2) - F(0)\n"
+                f"3. Evaluate at upper bound x = pi/2: F(pi/2) = sin(pi/2) = 1\n"
+                f"4. Evaluate at lower bound x = 0: F(0) = sin(0) = 0\n"
+                f"5. Subtract: F(pi/2) - F(0) = 1 - 0 = 1"
+            ),
+            "verified": True
+        }
+
+    poly_m = re.match(r"^(\d+(?:\.\d+)?)?\s*\*?\s*x(?:\^(\d+))?$", fn_clean)
+    if poly_m:
+        coeff = float(poly_m.group(1)) if poly_m.group(1) else 1.0
+        power = int(poly_m.group(2)) if poly_m.group(2) else 1
+        try:
+            a_val, a_disp = parse_val(a_str)
+            b_val, b_disp = parse_val(b_str)
+            new_power = power + 1
+            new_coeff = coeff / new_power
+            anti_str = format_coeff_power(new_coeff, new_power)
+
+            val_b = new_coeff * (b_val ** new_power)
+            val_a = new_coeff * (a_val ** new_power)
+            ans = val_b - val_a
+            ans_str = str(int(ans)) if ans.is_integer() else f"{ans:.6g}"
+            b_str_fmt = str(int(val_b)) if val_b.is_integer() else f"{val_b:.6g}"
+            a_str_fmt = str(int(val_a)) if val_a.is_integer() else f"{val_a:.6g}"
+
+            return {
+                "success": True,
+                "domain": "calculus_definite_integral",
+                "function": fn_expr,
+                "bounds": [a_str, b_str],
+                "result": ans_str,
+                "message": (
+                    f"The definite integral of {fn_expr} from {a_str} to {b_str} is {ans_str}.\n\n"
+                    f"Step-by-step solution:\n"
+                    f"1. Find antiderivative: F(x) = {anti_str}\n"
+                    f"2. Apply Fundamental Theorem of Calculus: [F(x)] from {a_str} to {b_str} = F({b_str}) - F({a_str})\n"
+                    f"3. Evaluate at upper bound x = {b_str}: F({b_str}) = {b_str_fmt}\n"
+                    f"4. Evaluate at lower bound x = {a_str}: F({a_str}) = {a_str_fmt}\n"
+                    f"5. Subtract: {b_str_fmt} - {a_str_fmt} = {ans_str}"
+                ),
+                "verified": True
+            }
+        except Exception:
+            pass
+
+    return None
 
 def solve_calculus(query: str) -> Optional[Dict[str, Any]]:
     """Comprehensive calculus engine: derivatives, indefinite integrals, definite integrals, and limits."""
@@ -926,58 +1108,9 @@ def solve_calculus(query: str) -> Optional[Dict[str, Any]]:
         fn_expr = def_int_m.group(1).strip()
         a_str = def_int_m.group(2).strip()
         b_str = def_int_m.group(3).strip()
-
-        def parse_val(v):
-            if v == "pi": return math.pi
-            if v == "e": return math.e
-            return float(v)
-
-        fn_clean = fn_expr.replace(" ", "")
-        if fn_clean in ["sin(x)", "sinx"] and a_str == "0" and b_str == "pi":
-            return {
-                "success": True,
-                "domain": "calculus_definite_integral",
-                "function": fn_expr,
-                "bounds": [0, "pi"],
-                "result": "2",
-                "message": f"The definite integral of {fn_expr} from 0 to pi is [-cos(x)] from 0 to pi = 2.",
-                "verified": True
-            }
-        if fn_clean in ["cos(x)", "cosx"] and a_str == "0" and b_str in ["pi/2", "0.5pi"]:
-            return {
-                "success": True,
-                "domain": "calculus_definite_integral",
-                "function": fn_expr,
-                "bounds": [0, "pi/2"],
-                "result": "1",
-                "message": f"The definite integral of {fn_expr} from 0 to pi/2 is [sin(x)] from 0 to pi/2 = 1.",
-                "verified": True
-            }
-
-        poly_m = re.match(r"^(\d+(?:\.\d+)?)?\s*\*?\s*x(?:\^(\d+))?$", fn_clean)
-        if poly_m:
-            coeff = float(poly_m.group(1)) if poly_m.group(1) else 1.0
-            power = int(poly_m.group(2)) if poly_m.group(2) else 1
-            try:
-                a_val = parse_val(a_str)
-                b_val = parse_val(b_str)
-                new_power = power + 1
-                new_coeff = coeff / new_power
-                val_b = new_coeff * (b_val ** new_power)
-                val_a = new_coeff * (a_val ** new_power)
-                ans = val_b - val_a
-                ans_str = str(int(ans)) if ans.is_integer() else f"{ans:.6g}"
-                return {
-                    "success": True,
-                    "domain": "calculus_definite_integral",
-                    "function": fn_expr,
-                    "bounds": [a_str, b_str],
-                    "result": ans_str,
-                    "message": f"The definite integral of {fn_expr} from {a_str} to {b_str} is {ans_str}.",
-                    "verified": True
-                }
-            except Exception:
-                pass
+        res_def = get_detailed_definite_integral(fn_expr, a_str, b_str)
+        if res_def:
+            return res_def
 
     # 3. INDEFINITE INTEGRATION
     int_m = re.search(r"(?:integral\s+of|integrate|antiderivative\s+of|integration\s+of)\s+(.+)", s)
@@ -985,19 +1118,9 @@ def solve_calculus(query: str) -> Optional[Dict[str, Any]]:
         fn_expr = int_m.group(1).strip()
         fn_expr = re.sub(r"\s+with\s+respect\s+to\s+x", "", fn_expr)
         fn_expr = re.sub(r"\s+dx$", "", fn_expr).strip()
-        res_anti, explanation = get_symbolic_antiderivative(fn_expr)
-        if res_anti:
-            msg = f"The integral of {fn_expr} with respect to x is {res_anti} + C."
-            if explanation:
-                msg += f" ({explanation})"
-            return {
-                "success": True,
-                "domain": "calculus_integral",
-                "function": fn_expr,
-                "result": f"{res_anti} + C",
-                "message": msg,
-                "verified": True
-            }
+        res_indef = get_detailed_indefinite_integral(fn_expr)
+        if res_indef:
+            return res_indef
 
     # 4. DIFFERENTIATION / DERIVATIVE
     diff_m = re.search(r"(?:derivative\s+of|differentiation\s+of|differentiate|diff\s+of|d\/dx\s+(?:of\s+)?)\s*(.+)", s)
